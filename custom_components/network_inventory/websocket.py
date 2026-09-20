@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
+import voluptuous as vol
+
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
 from .storage import InventoryError, InventoryStore
@@ -41,7 +44,12 @@ async def websocket_list(
     connection.send_result(msg["id"], data)
 
 
-@websocket_api.websocket_command({"type": f"{DOMAIN}/add"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/add",
+        vol.Required("device"): dict,
+    }
+)
 @websocket_api.require_admin
 @websocket_api.async_response
 async def websocket_add(
@@ -60,7 +68,13 @@ async def websocket_add(
     connection.send_result(msg["id"], device)
 
 
-@websocket_api.websocket_command({"type": f"{DOMAIN}/update"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/update",
+        vol.Required("device_id"): str,
+        vol.Required("device"): dict,
+    }
+)
 @websocket_api.require_admin
 @websocket_api.async_response
 async def websocket_update(
@@ -70,18 +84,23 @@ async def websocket_update(
 ) -> None:
     """Update one device."""
     try:
-        if not isinstance(msg.get("id"), str) or not isinstance(
+        if not isinstance(msg.get("device_id"), str) or not isinstance(
             msg.get("device"), dict
         ):
             raise InventoryError("Device ID and device data are required")
-        device = await _manager(hass).async_update(msg["id"], msg["device"])
+        device = await _manager(hass).async_update(msg["device_id"], msg["device"])
     except InventoryError as err:
         connection.send_error(msg["id"], "invalid_device", str(err))
         return
     connection.send_result(msg["id"], device)
 
 
-@websocket_api.websocket_command({"type": f"{DOMAIN}/delete"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/delete",
+        vol.Required("device_id"): str,
+    }
+)
 @websocket_api.require_admin
 @websocket_api.async_response
 async def websocket_delete(
@@ -91,16 +110,21 @@ async def websocket_delete(
 ) -> None:
     """Delete one device."""
     try:
-        if not isinstance(msg.get("id"), str):
+        if not isinstance(msg.get("device_id"), str):
             raise InventoryError("Device ID is required")
-        await _manager(hass).async_delete(msg["id"])
+        await _manager(hass).async_delete(msg["device_id"])
     except InventoryError as err:
         connection.send_error(msg["id"], "invalid_device", str(err))
         return
     connection.send_result(msg["id"], {})
 
 
-@websocket_api.websocket_command({"type": f"{DOMAIN}/import"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/import",
+        vol.Required("devices"): [dict],
+    }
+)
 @websocket_api.require_admin
 @websocket_api.async_response
 async def websocket_import(
@@ -121,7 +145,12 @@ async def websocket_import(
     connection.send_result(msg["id"], result)
 
 
-@websocket_api.websocket_command({"type": f"{DOMAIN}/settings"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/settings",
+        vol.Required("settings"): dict,
+    }
+)
 @websocket_api.require_admin
 @websocket_api.async_response
 async def websocket_settings(
@@ -147,6 +176,7 @@ def _home_assistant_devices(
     """Build a serialisable list from Home Assistant's device registry."""
     device_registry = dr.async_get(hass)
     area_registry = ar.async_get(hass)
+    entity_registry = er.async_get(hass)
     imported_ids = {
         item.get("ha_device_id") for item in inventory_devices if item.get("ha_device_id")
     }
@@ -164,6 +194,11 @@ def _home_assistant_devices(
         )
         connections = {kind: value for kind, value in device.connections}
         area = area_registry.async_get_area(device.area_id) if device.area_id else None
+        entity_ids = sorted(
+            entry.entity_id
+            for entry in entity_registry.entities.values()
+            if entry.device_id == device.id
+        )
         result.append(
             {
                 "ha_device_id": device.id,
@@ -175,6 +210,7 @@ def _home_assistant_devices(
                 "protocol": _guess_protocol(domains),
                 "integration": ", ".join(domains),
                 "device_identifier": _first_identifier(device.identifiers),
+                "entity_id": ", ".join(entity_ids),
                 "status": "unknown",
             }
         )

@@ -260,6 +260,7 @@ class InventoryStore:
             "ip_address",
             "protocol",
             "device_identifier",
+            "entity_id",
             "comments",
             "status",
             "ha_device_id",

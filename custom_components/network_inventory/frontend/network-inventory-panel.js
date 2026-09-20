@@ -4,7 +4,7 @@ const TEXT = {
     settings: "Settings", addDevice: "Add device", total: "Total devices", areas: "Areas", brands: "Brands",
     protocols: "Protocols", search: "Search devices…", allProtocols: "All protocols", code: "Device ID",
     name: "Device name", type: "Type", brand: "Brand", model: "Model", area: "Area", address: "MAC / IEEE",
-    ip: "IP address", protocol: "Protocol", identifier: "Device identifier", comments: "Comments", status: "Status",
+    ip: "IP address", protocol: "Protocol", identifier: "Device identifier", entityId: "Entity ID(s)", comments: "Comments", status: "Status",
     actions: "Actions", edit: "Edit", delete: "Delete", save: "Save", cancel: "Cancel", empty: "No devices found.",
     importHa: "Import devices already known to Home Assistant.", import: "Import", importAll: "Import all",
     integration: "Integration", csv: "CSV import", exportCsv: "Export CSV", chooseCsv: "Choose CSV",
@@ -20,7 +20,7 @@ const TEXT = {
     settings: "Ρυθμίσεις", addDevice: "Νέα συσκευή", total: "Σύνολο συσκευών", areas: "Χώροι", brands: "Κατασκευαστές",
     protocols: "Πρωτόκολλα", search: "Αναζήτηση συσκευών…", allProtocols: "Όλα τα πρωτόκολλα", code: "Device ID",
     name: "Όνομα συσκευής", type: "Τύπος", brand: "Brand", model: "Μοντέλο", area: "Χώρος", address: "MAC / IEEE",
-    ip: "Διεύθυνση IP", protocol: "Πρωτόκολλο", identifier: "Αναγνωριστικό συσκευής", comments: "Σχόλια", status: "Κατάσταση",
+    ip: "Διεύθυνση IP", protocol: "Πρωτόκολλο", identifier: "Αναγνωριστικό συσκευής", entityId: "Entity ID(s)", comments: "Σχόλια", status: "Κατάσταση",
     actions: "Ενέργειες", edit: "Επεξεργασία", delete: "Διαγραφή", save: "Αποθήκευση", cancel: "Ακύρωση", empty: "Δεν βρέθηκαν συσκευές.",
     importHa: "Εισαγωγή συσκευών που γνωρίζει ήδη το Home Assistant.", import: "Εισαγωγή", importAll: "Εισαγωγή όλων",
     integration: "Integration", csv: "Εισαγωγή CSV", exportCsv: "Εξαγωγή CSV", chooseCsv: "Επιλογή CSV",
@@ -157,7 +157,7 @@ class NetworkInventoryPanel extends HTMLElement {
       <section class="table-card">
         <div class="table-scroll"><table><thead><tr>
           <th>${this.t("code")}</th><th>${this.t("name")}</th><th>${this.t("type")}</th><th>${this.t("brand")}</th>
-          <th>${this.t("area")}</th><th>${this.t("address")}</th><th>${this.t("ip")}</th><th>${this.t("protocol")}</th><th></th>
+          <th>${this.t("area")}</th><th>${this.t("address")}</th><th>${this.t("ip")}</th><th>${this.t("entityId")}</th><th>${this.t("protocol")}</th><th></th>
         </tr></thead><tbody>${devices.map(d => this.deviceRow(d)).join("")}</tbody></table></div>
         ${devices.length ? "" : `<div class="empty"><ha-icon icon="mdi:devices-off"></ha-icon><p>${this.t("empty")}</p></div>`}
       </section>`;
@@ -169,7 +169,7 @@ class NetworkInventoryPanel extends HTMLElement {
       <td><span class="code">${d.device_code}</span></td>
       <td><strong>${esc(d.name)}</strong><small>${esc(d.model || d.integration || "")}</small></td>
       <td>${esc(d.device_type)}</td><td>${esc(d.brand)}</td><td>${esc(d.area)}</td>
-      <td class="mono">${esc(d.mac)}</td><td class="mono">${esc(d.ip_address)}</td>
+      <td class="mono">${esc(d.mac)}</td><td class="mono">${esc(d.ip_address)}</td><td class="mono">${esc(d.entity_id)}</td>
       <td><span class="pill" style="--pill:${safeColor(protocol.color)}">${esc(protocol.label)}</span></td>
       <td><div class="row-actions"><button title="${this.t("edit")}" data-edit="${d.id}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="danger-icon" title="${this.t("delete")}" data-delete="${d.id}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div></td>
     </tr>`;
@@ -249,7 +249,8 @@ class NetworkInventoryPanel extends HTMLElement {
         ${field("area", this.t("area"), device?.area)}
         <label>${this.t("protocol")}<select name="protocol">${protocols}</select><small>${device ? this.t("stableId") : ""}</small></label>
         ${field("mac", this.t("address"), device?.mac)}${field("ip_address", this.t("ip"), device?.ip_address)}
-        ${field("device_identifier", this.t("identifier"), device?.device_identifier)}${field("integration", this.t("integration"), device?.integration)}
+        ${field("device_identifier", this.t("identifier"), device?.device_identifier)}${field("entity_id", this.t("entityId"), device?.entity_id)}
+        ${field("integration", this.t("integration"), device?.integration)}
         <label>${this.t("status")}<select name="status"><option value="unknown">${this.t("unknown")}</option><option value="online" ${device?.status === "online" ? "selected" : ""}>Online</option><option value="offline" ${device?.status === "offline" ? "selected" : ""}>Offline</option></select></label>
         <label class="full">${this.t("comments")}<textarea name="comments" rows="3">${esc(device?.comments || "")}</textarea></label>
       </div><div class="modal-actions"><button type="button" class="secondary" data-close>${this.t("cancel")}</button><button type="submit" class="primary">${this.t("save")}</button></div></form></section></div>`;
@@ -264,7 +265,7 @@ class NetworkInventoryPanel extends HTMLElement {
     if (!payload.name.trim()) return this.toast(this.t("requiredName"), true);
     this.setBusy(form, true);
     try {
-      await this._hass.callWS({ type: existing ? "network_inventory/update" : "network_inventory/add", ...(existing ? { id: existing.id } : {}), device: payload });
+      await this._hass.callWS({ type: existing ? "network_inventory/update" : "network_inventory/add", ...(existing ? { device_id: existing.id } : {}), device: payload });
       this.shadowRoot.querySelector("#modal").innerHTML = "";
       await this.reload(this.t("saved"));
     } catch (error) { this.toast(error?.message || this.t("error"), true); this.setBusy(form, false); }
@@ -272,7 +273,7 @@ class NetworkInventoryPanel extends HTMLElement {
 
   async deleteDevice(id) {
     if (!confirm(this.t("confirmDelete"))) return;
-    try { await this._hass.callWS({ type: "network_inventory/delete", id }); await this.reload(this.t("saved")); }
+    try { await this._hass.callWS({ type: "network_inventory/delete", device_id: id }); await this.reload(this.t("saved")); }
     catch (error) { this.toast(error?.message || this.t("error"), true); }
   }
 
@@ -294,8 +295,8 @@ class NetworkInventoryPanel extends HTMLElement {
   }
 
   exportCsv() {
-    const headers = ["Device Code","MAC / IEEE Address","Device IP","Device Type","Brand","Area","Device Name","Device ID","Comments","Protocol"];
-    const keys = ["device_code","mac","ip_address","device_type","brand","area","name","device_identifier","comments","protocol"];
+    const headers = ["Device Code","MAC / IEEE Address","Device IP","Device Type","Brand","Area","Device Name","Device ID","Entity ID(s)","Comments","Protocol"];
+    const keys = ["device_code","mac","ip_address","device_type","brand","area","name","device_identifier","entity_id","comments","protocol"];
     const lines = [headers, ...this.data.devices.sort((a,b) => a.device_code-b.device_code).map(d => keys.map(k => d[k] ?? ""))];
     const csv = lines.map(row => row.map(csvCell).join(",")).join("\r\n");
     const link = document.createElement("a");
@@ -375,9 +376,10 @@ function csvToDevices(text) {
     device_code: find("devicecode", "code"), mac: find("macieeeaddress", "macaddress", "mac", "ieee"),
     ip_address: find("deviceip", "ipaddress", "ip"), device_type: find("devicetype", "type"), brand: find("brand", "manufacturer"),
     area: find("area", "room"), name: find("devicename", "name"), device_identifier: find("deviceid", "identifier"),
+    entity_id: find("entityid", "entityids"),
     comments: find("comments", "notes"), protocol: find("protocol", "connection", "network")
   };
-  if (index.protocol < 0 && rows[0].length >= 10) index.protocol = 9;
+  if (index.protocol < 0 && rows[0].length >= 10) index.protocol = rows[0].length - 1;
   return rows.slice(1).map(row => Object.fromEntries(Object.entries(index).map(([key, i]) => [key, i >= 0 ? (row[i] || "").trim() : ""]))).filter(item => item.name);
 }
 
