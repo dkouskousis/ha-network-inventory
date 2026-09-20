@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from ipaddress import ip_address
 from typing import Any
+from urllib.parse import urlparse
 
 import voluptuous as vol
 
@@ -193,12 +195,16 @@ def _home_assistant_devices(
             }
         )
         connections = {kind: value for kind, value in device.connections}
-        area = area_registry.async_get_area(device.area_id) if device.area_id else None
-        entity_ids = sorted(
-            entry.entity_id
+        entities = [
+            entry
             for entry in entity_registry.entities.values()
             if entry.device_id == device.id
+        ]
+        entity_ids = sorted(entry.entity_id for entry in entities)
+        area_id = device.area_id or next(
+            (entry.area_id for entry in entities if entry.area_id), None
         )
+        area = area_registry.async_get_area(area_id) if area_id else None
         result.append(
             {
                 "ha_device_id": device.id,
@@ -206,7 +212,9 @@ def _home_assistant_devices(
                 "brand": device.manufacturer or "",
                 "model": device.model or "",
                 "area": area.name if area else "",
-                "mac": connections.get(dr.CONNECTION_NETWORK_MAC, ""),
+                "mac": _hardware_address(connections),
+                "ip_address": _configuration_ip(device.configuration_url),
+                "device_type": _guess_device_type(entity_ids),
                 "protocol": _guess_protocol(domains),
                 "integration": ", ".join(domains),
                 "device_identifier": _first_identifier(device.identifiers),
@@ -238,6 +246,47 @@ def _guess_protocol(domains: list[str]) -> str:
     }:
         return "wifi"
     return "other"
+
+
+def _hardware_address(connections: dict[str, str]) -> str:
+    """Return the available MAC, Zigbee IEEE, or Bluetooth address."""
+    return (
+        connections.get(dr.CONNECTION_NETWORK_MAC)
+        or connections.get(dr.CONNECTION_ZIGBEE)
+        or connections.get(dr.CONNECTION_BLUETOOTH)
+        or ""
+    )
+
+
+def _configuration_ip(configuration_url: Any) -> str:
+    """Return an IP address from a device configuration URL."""
+    if not configuration_url:
+        return ""
+    host = urlparse(str(configuration_url)).hostname
+    if not host:
+        return ""
+    try:
+        ip_address(host)
+    except ValueError:
+        return ""
+    return host
+
+
+def _guess_device_type(entity_ids: list[str]) -> str:
+    """Infer an inventory type from the device's entity domains."""
+    domains = {entity_id.partition(".")[0] for entity_id in entity_ids}
+    for domain, device_type in (
+        ("camera", "Camera"),
+        ("light", "Light"),
+        ("switch", "Switch"),
+        ("climate", "Thermostat"),
+        ("media_player", "Media Player"),
+        ("sensor", "Sensor"),
+        ("binary_sensor", "Sensor"),
+    ):
+        if domain in domains:
+            return device_type
+    return ""
 
 
 def _first_identifier(identifiers: set[tuple[str, str]]) -> str:

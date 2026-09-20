@@ -5,6 +5,7 @@ NAME = "Network Inventory"
 STORAGE_KEY = f"{DOMAIN}.data"
 STORAGE_VERSION = 1
 PANEL_URL = "/network_inventory_static"
+IP_PROTOCOLS = {"wifi", "ethernet"}
 
 DEFAULT_PROTOCOLS = {
     "wifi": {"label": "Wi-Fi", "start": 1001, "end": 1999, "color": "#2563eb"},
@@ -33,4 +34,3 @@ DEFAULT_DEVICE_TYPES = [
     "Thermostat",
     "Other",
 ]
-

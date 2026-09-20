@@ -8,6 +8,8 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - Separate configurable number range for each protocol
 - Manual device management
 - Import from the Home Assistant Device Registry
+- Review imported devices in a pre-filled form before saving
+- Configurable brand list with automatic additions during import
 - Import and export compatible CSV files
 - Search and protocol filters
 - Responsive desktop and mobile interface
@@ -53,12 +55,11 @@ The importer recognises these spreadsheet columns:
 
 ```text
 Device Code, MAC / IEEE Address, Device IP, Device Type, Brand,
-Area, Device Name, Device ID, Comments, Protocol
+Area, Device Name, Device ID, Entity Name, Comments, Protocol
 ```
 
-`Device Name` is required. `Device Code` can be omitted to assign the next available permanent ID automatically. The importer also accepts `Wi-Fi`, `ZigBee`, `Bluetooth`, `Thread`, `Z-Wave`, `Ethernet`, `Matter`, and `Other` protocol values.
+`Device Name`, `Device Type`, `Brand`, `Area`, `MAC / IEEE Address`, and `Protocol` are required. `Device IP` is also required for Wi-Fi and Ethernet devices. `Device Code` can be omitted to assign the next available permanent ID automatically. The importer also accepts `Wi-Fi`, `ZigBee`, `Bluetooth`, `Thread`, `Z-Wave`, `Ethernet`, `Matter`, and `Other` protocol values.
 
 ## Storage and privacy
 
 Inventory data is stored locally in Home Assistant's private `.storage` directory. The panel and its WebSocket commands require an administrator account. Passwords and credentials are intentionally not supported as inventory fields.
-

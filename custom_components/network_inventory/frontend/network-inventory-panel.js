@@ -6,10 +6,10 @@ const TEXT = {
     name: "Device name", type: "Type", brand: "Brand", model: "Model", area: "Area", address: "MAC / IEEE",
     ip: "IP address", protocol: "Protocol", identifier: "Device identifier", entityName: "Entity name", comments: "Comments", status: "Status",
     actions: "Actions", edit: "Edit", delete: "Delete", save: "Save", cancel: "Cancel", empty: "No devices found.",
-    importHa: "Import devices already known to Home Assistant.", import: "Import", importAll: "Import all",
+    importHa: "Import devices already known to Home Assistant.", import: "Import",
     integration: "Integration", csv: "CSV import", exportCsv: "Export CSV", chooseCsv: "Choose CSV",
     ranges: "Device ID ranges", rangeHelp: "IDs are permanent. A deleted ID is never reused.", start: "Start", end: "End",
-    color: "Color", deviceTypes: "Device types (one per line)", saveSettings: "Save settings", addProtocol: "Add protocol",
+    color: "Color", deviceTypes: "Device types (one per line)", brandSettings: "Brands (one per line)", saveSettings: "Save settings", addProtocol: "Add protocol",
     key: "Key", confirmDelete: "Delete this device? Its Device ID will not be reused.", requiredName: "Device name is required.",
     loading: "Loading…", saved: "Saved", imported: "devices imported", skipped: "skipped", error: "Something went wrong",
     autoId: "Assigned automatically when saved", stableId: "The Device ID remains unchanged if the protocol changes.",
@@ -22,10 +22,10 @@ const TEXT = {
     name: "Όνομα συσκευής", type: "Τύπος", brand: "Brand", model: "Μοντέλο", area: "Χώρος", address: "MAC / IEEE",
     ip: "Διεύθυνση IP", protocol: "Πρωτόκολλο", identifier: "Αναγνωριστικό συσκευής", entityName: "Όνομα entity", comments: "Σχόλια", status: "Κατάσταση",
     actions: "Ενέργειες", edit: "Επεξεργασία", delete: "Διαγραφή", save: "Αποθήκευση", cancel: "Ακύρωση", empty: "Δεν βρέθηκαν συσκευές.",
-    importHa: "Εισαγωγή συσκευών που γνωρίζει ήδη το Home Assistant.", import: "Εισαγωγή", importAll: "Εισαγωγή όλων",
+    importHa: "Εισαγωγή συσκευών που γνωρίζει ήδη το Home Assistant.", import: "Εισαγωγή",
     integration: "Integration", csv: "Εισαγωγή CSV", exportCsv: "Εξαγωγή CSV", chooseCsv: "Επιλογή CSV",
     ranges: "Εύρη Device ID", rangeHelp: "Τα ID είναι μόνιμα. Ένα διαγραμμένο ID δεν χρησιμοποιείται ξανά.", start: "Αρχή", end: "Τέλος",
-    color: "Χρώμα", deviceTypes: "Τύποι συσκευών (ένας ανά γραμμή)", saveSettings: "Αποθήκευση ρυθμίσεων", addProtocol: "Νέο πρωτόκολλο",
+    color: "Χρώμα", deviceTypes: "Τύποι συσκευών (ένας ανά γραμμή)", brandSettings: "Brands (ένα ανά γραμμή)", saveSettings: "Αποθήκευση ρυθμίσεων", addProtocol: "Νέο πρωτόκολλο",
     key: "Κλειδί", confirmDelete: "Να διαγραφεί η συσκευή; Το Device ID της δεν θα χρησιμοποιηθεί ξανά.", requiredName: "Το όνομα είναι υποχρεωτικό.",
     loading: "Φόρτωση…", saved: "Αποθηκεύτηκε", imported: "συσκευές εισήχθησαν", skipped: "παραλείφθηκαν", error: "Παρουσιάστηκε σφάλμα",
     autoId: "Δίνεται αυτόματα κατά την αποθήκευση", stableId: "Το Device ID δεν αλλάζει αν αλλάξει το πρωτόκολλο.",
@@ -177,7 +177,7 @@ class NetworkInventoryPanel extends HTMLElement {
 
   renderHaDevices() {
     const devices = this.data.ha_devices;
-    return `<section class="section-head"><div><h2>${this.t("homeAssistant")}</h2><p>${this.t("importHa")}</p></div>${devices.length ? `<button class="secondary" data-action="import-all"><ha-icon icon="mdi:database-import-outline"></ha-icon>${this.t("importAll")}</button>` : ""}</section>
+    return `<section class="section-head"><div><h2>${this.t("homeAssistant")}</h2><p>${this.t("importHa")}</p></div></section>
       <section class="import-grid">${devices.map((d, index) => {
         const p = this.data.protocols[d.protocol] || this.data.protocols.other;
         return `<article class="import-card"><div class="device-icon"><ha-icon icon="mdi:devices"></ha-icon></div><div class="grow"><h3>${esc(d.name)}</h3><p>${esc([d.brand, d.model].filter(Boolean).join(" · "))}</p><div class="meta"><span>${esc(d.area || "—")}</span><span>${esc(d.integration || "—")}</span><span class="pill" style="--pill:${safeColor(p.color)}">${esc(p.label)}</span></div></div><button class="primary compact" data-import="${index}">${this.t("import")}</button></article>`;
@@ -191,6 +191,7 @@ class NetworkInventoryPanel extends HTMLElement {
         <div id="protocol-rows" class="protocol-settings">${rows}</div>
       </section>
       <section class="card settings-card"><h2>${this.t("deviceTypes")}</h2><textarea id="device-types" rows="12">${esc(this.data.device_types.join("\n"))}</textarea></section>
+      <section class="card settings-card"><h2>${this.t("brandSettings")}</h2><textarea id="brands" rows="8">${esc(this.data.brands.join("\n"))}</textarea></section>
       <div class="form-actions"><button type="submit" class="primary"><ha-icon icon="mdi:content-save-outline"></ha-icon>${this.t("saveSettings")}</button></div>
     </form>`;
   }
@@ -220,8 +221,7 @@ class NetworkInventoryPanel extends HTMLElement {
     this.shadowRoot.querySelector("[data-action='export']")?.addEventListener("click", () => this.exportCsv());
     this.shadowRoot.querySelector("[data-action='csv']")?.addEventListener("click", () => this.shadowRoot.querySelector("#csv-file").click());
     this.shadowRoot.querySelector("#csv-file")?.addEventListener("change", event => this.importCsv(event.target.files[0]));
-    this.shadowRoot.querySelectorAll("[data-import]").forEach(button => button.addEventListener("click", () => this.importHa([this.data.ha_devices[Number(button.dataset.import)]])));
-    this.shadowRoot.querySelector("[data-action='import-all']")?.addEventListener("click", () => this.importHa(this.data.ha_devices));
+    this.shadowRoot.querySelectorAll("[data-import]").forEach(button => button.addEventListener("click", () => this.openDeviceModal(this.data.ha_devices[Number(button.dataset.import)], true)));
     this.shadowRoot.querySelector("[data-action='add-protocol']")?.addEventListener("click", () => this.addProtocolRow());
     this.shadowRoot.querySelectorAll("[data-remove-protocol]").forEach(button => button.addEventListener("click", () => button.closest(".protocol-setting").remove()));
     this.shadowRoot.querySelector("#settings-form")?.addEventListener("submit", event => this.saveSettings(event));
@@ -237,37 +237,51 @@ class NetworkInventoryPanel extends HTMLElement {
     tbody.querySelectorAll("[data-delete]").forEach(b => b.addEventListener("click", () => this.deleteDevice(b.dataset.delete)));
   }
 
-  openDeviceModal(device = null) {
+  openDeviceModal(device = null, isImport = false) {
     const protocols = Object.entries(this.data.protocols).map(([key,p]) => `<option value="${esc(key)}" ${(device?.protocol || "wifi") === key ? "selected" : ""}>${esc(p.label)}</option>`).join("");
     const types = this.data.device_types.map(type => `<option value="${esc(type)}" ${device?.device_type === type ? "selected" : ""}>${esc(type)}</option>`).join("");
+    const brands = [...this.data.brands];
+    if (device?.brand && !brands.some(brand => brand.toLowerCase() === device.brand.toLowerCase())) brands.push(device.brand);
+    const brandOptions = brands.sort((a,b) => a.localeCompare(b)).map(brand => `<option value="${esc(brand)}" ${device?.brand === brand ? "selected" : ""}>${esc(brand)}</option>`).join("");
+    const isEdit = Boolean(device && !isImport);
+    const ipRequired = ["wifi", "ethernet"].includes(device?.protocol || "wifi");
     const modal = this.shadowRoot.querySelector("#modal");
-    modal.innerHTML = `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><div><h2>${device ? this.t("edit") : this.t("addDevice")}</h2><p>${device ? `${this.t("code")}: ${device.device_code}` : this.t("autoId")}</p></div><button type="button" data-close><ha-icon icon="mdi:close"></ha-icon></button></div>
+    modal.innerHTML = `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><div><h2>${isEdit ? this.t("edit") : this.t("addDevice")}</h2><p>${isEdit ? `${this.t("code")}: ${device.device_code}` : this.t("autoId")}</p></div><button type="button" data-close><ha-icon icon="mdi:close"></ha-icon></button></div>
       <form id="device-form"><div class="form-grid">
         ${field("name", this.t("name"), device?.name, true)}
-        <label>${this.t("type")}<select name="device_type"><option value=""></option>${types}</select></label>
-        ${field("brand", this.t("brand"), device?.brand)}${field("model", this.t("model"), device?.model)}
-        ${field("area", this.t("area"), device?.area)}
-        <label>${this.t("protocol")}<select name="protocol">${protocols}</select><small>${device ? this.t("stableId") : ""}</small></label>
-        ${field("mac", this.t("address"), device?.mac)}${field("ip_address", this.t("ip"), device?.ip_address)}
+        <label>${this.t("type")}<select name="device_type" required><option value=""></option>${types}</select></label>
+        <label>${this.t("brand")}<select name="brand" required><option value=""></option>${brandOptions}</select></label>${field("model", this.t("model"), device?.model)}
+        ${field("area", this.t("area"), device?.area, true)}
+        <label>${this.t("protocol")}<select name="protocol" required>${protocols}</select><small>${isEdit ? this.t("stableId") : ""}</small></label>
+        ${field("mac", this.t("address"), device?.mac, true)}${field("ip_address", this.t("ip"), device?.ip_address, ipRequired)}
         ${field("device_identifier", this.t("identifier"), device?.device_identifier)}${field("entity_name", this.t("entityName"), device?.entity_name)}
         ${field("integration", this.t("integration"), device?.integration)}
         <label>${this.t("status")}<select name="status"><option value="unknown">${this.t("unknown")}</option><option value="online" ${device?.status === "online" ? "selected" : ""}>Online</option><option value="offline" ${device?.status === "offline" ? "selected" : ""}>Offline</option></select></label>
         <label class="full">${this.t("comments")}<textarea name="comments" rows="3">${esc(device?.comments || "")}</textarea></label>
       </div><div class="modal-actions"><button type="button" class="secondary" data-close>${this.t("cancel")}</button><button type="submit" class="primary">${this.t("save")}</button></div></form></section></div>`;
     modal.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", () => modal.innerHTML = ""));
-    modal.querySelector("#device-form").addEventListener("submit", event => this.saveDevice(event, device));
+    const protocolSelect = modal.querySelector("[name='protocol']");
+    const ipInput = modal.querySelector("[name='ip_address']");
+    protocolSelect.addEventListener("change", () => { ipInput.required = ["wifi", "ethernet"].includes(protocolSelect.value); });
+    modal.querySelector("#device-form").addEventListener("submit", event => this.saveDevice(event, isEdit ? device : null, isImport ? device : null));
   }
 
-  async saveDevice(event, existing) {
+  async saveDevice(event, existing, importSource = null) {
     event.preventDefault();
     const form = event.currentTarget;
     const payload = Object.fromEntries(new FormData(form).entries());
     if (!payload.name.trim()) return this.toast(this.t("requiredName"), true);
     this.setBusy(form, true);
     try {
-      await this._hass.callWS({ type: existing ? "network_inventory/update" : "network_inventory/add", ...(existing ? { device_id: existing.id } : {}), device: payload });
+      let message = this.t("saved");
+      if (importSource) {
+        const result = await this._hass.callWS({ type: "network_inventory/import", devices: [{ ...importSource, ...payload }] });
+        message = `${result.imported} ${this.t("imported")}, ${result.skipped} ${this.t("skipped")}`;
+      } else {
+        await this._hass.callWS({ type: existing ? "network_inventory/update" : "network_inventory/add", ...(existing ? { device_id: existing.id } : {}), device: payload });
+      }
       this.shadowRoot.querySelector("#modal").innerHTML = "";
-      await this.reload(this.t("saved"));
+      await this.reload(message);
     } catch (error) { this.toast(error?.message || this.t("error"), true); this.setBusy(form, false); }
   }
 
@@ -275,14 +289,6 @@ class NetworkInventoryPanel extends HTMLElement {
     if (!confirm(this.t("confirmDelete"))) return;
     try { await this._hass.callWS({ type: "network_inventory/delete", device_id: id }); await this.reload(this.t("saved")); }
     catch (error) { this.toast(error?.message || this.t("error"), true); }
-  }
-
-  async importHa(devices) {
-    if (!devices.length) return;
-    try {
-      const result = await this._hass.callWS({ type: "network_inventory/import", devices });
-      await this.reload(`${result.imported} ${this.t("imported")}, ${result.skipped} ${this.t("skipped")}`);
-    } catch (error) { this.toast(error?.message || this.t("error"), true); }
   }
 
   async importCsv(file) {
@@ -319,7 +325,8 @@ class NetworkInventoryPanel extends HTMLElement {
       protocols[values.key] = { label: values.label, start: Number(values.start), end: Number(values.end), color: values.color };
     });
     const device_types = this.shadowRoot.querySelector("#device-types").value.split("\n").map(v => v.trim()).filter(Boolean);
-    try { await this._hass.callWS({ type: "network_inventory/settings", settings: { protocols, device_types } }); await this.reload(this.t("saved")); }
+    const brands = this.shadowRoot.querySelector("#brands").value.split("\n").map(v => v.trim()).filter(Boolean);
+    try { await this._hass.callWS({ type: "network_inventory/settings", settings: { protocols, device_types, brands } }); await this.reload(this.t("saved")); }
     catch (error) { this.toast(error?.message || this.t("error"), true); }
   }
 

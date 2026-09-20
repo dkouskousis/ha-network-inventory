@@ -14,6 +14,7 @@ from homeassistant.helpers.storage import Store
 from .const import (
     DEFAULT_DEVICE_TYPES,
     DEFAULT_PROTOCOLS,
+    IP_PROTOCOLS,
     STORAGE_KEY,
     STORAGE_VERSION,
 )
@@ -54,6 +55,7 @@ class InventoryStore:
             "devices": [],
             "protocols": deepcopy(DEFAULT_PROTOCOLS),
             "device_types": list(DEFAULT_DEVICE_TYPES),
+            "brands": [],
             "counters": {
                 key: value["start"] - 1 for key, value in DEFAULT_PROTOCOLS.items()
             },
@@ -61,6 +63,17 @@ class InventoryStore:
         self.data.setdefault("devices", [])
         self.data.setdefault("protocols", deepcopy(DEFAULT_PROTOCOLS))
         self.data.setdefault("device_types", list(DEFAULT_DEVICE_TYPES))
+        self.data.setdefault(
+            "brands",
+            sorted(
+                {
+                    str(device.get("brand", "")).strip()
+                    for device in self.data["devices"]
+                    if str(device.get("brand", "")).strip()
+                },
+                key=str.casefold,
+            ),
+        )
         self.data.setdefault("counters", {})
         for key, value in self.data["protocols"].items():
             self.data["counters"].setdefault(key, value["start"] - 1)
@@ -72,10 +85,10 @@ class InventoryStore:
     async def async_add(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Create a device and assign its permanent device code."""
         async with self._lock:
-            protocol = self._normalise_protocol(payload.get("protocol"))
+            device = self._clean_device(payload)
+            protocol = device["protocol"]
             device_code = self._next_device_code(protocol)
             now = _now()
-            device = self._clean_device(payload)
             device.update(
                 {
                     "id": uuid4().hex,
@@ -86,6 +99,7 @@ class InventoryStore:
                 }
             )
             self.data["devices"].append(device)
+            self._remember_brand(device["brand"])
             await self._store.async_save(self.data)
             return deepcopy(device)
 
@@ -106,6 +120,7 @@ class InventoryStore:
             device.update(protected)
             device["protocol"] = self._normalise_protocol(device.get("protocol"))
             device["updated_at"] = _now()
+            self._remember_brand(device["brand"])
             await self._store.async_save(self.data)
             return deepcopy(device)
 
@@ -134,7 +149,8 @@ class InventoryStore:
                 if payload.get("ha_device_id") in existing_ha_ids:
                     skipped += 1
                     continue
-                protocol = self._normalise_protocol(payload.get("protocol"))
+                device = self._clean_device(payload)
+                protocol = device["protocol"]
                 supplied_code = _to_int(payload.get("device_code"))
                 if supplied_code is not None:
                     config = self.data["protocols"][protocol]
@@ -153,7 +169,6 @@ class InventoryStore:
                     device_code = self._next_device_code(protocol)
 
                 now = _now()
-                device = self._clean_device(payload)
                 device.update(
                     {
                         "id": uuid4().hex,
@@ -164,6 +179,7 @@ class InventoryStore:
                     }
                 )
                 self.data["devices"].append(device)
+                self._remember_brand(device["brand"])
                 existing_codes.add(device_code)
                 if device.get("ha_device_id"):
                     existing_ha_ids.add(device["ha_device_id"])
@@ -173,7 +189,7 @@ class InventoryStore:
             return {"imported": imported, "skipped": skipped}
 
     async def async_save_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Save protocol ranges and device types."""
+        """Save protocol ranges, device types, and brands."""
         async with self._lock:
             protocols = payload.get("protocols", self.data["protocols"])
             cleaned: dict[str, dict[str, Any]] = {}
@@ -222,8 +238,18 @@ class InventoryStore:
             if not device_types:
                 raise InventoryError("At least one device type is required")
 
+            brands = {
+                str(item).strip()[:100]
+                for item in payload.get("brands", self.data["brands"])
+                if str(item).strip()
+            }
+            brands.update(
+                device["brand"] for device in self.data["devices"] if device["brand"]
+            )
+
             self.data["protocols"] = cleaned
             self.data["device_types"] = device_types
+            self.data["brands"] = sorted(brands, key=str.casefold)
             for key, config in cleaned.items():
                 self.data["counters"].setdefault(key, config["start"] - 1)
             await self._store.async_save(self.data)
@@ -262,8 +288,12 @@ class InventoryStore:
                 return device
         raise InventoryError("Device not found")
 
-    @staticmethod
-    def _clean_device(payload: dict[str, Any]) -> dict[str, Any]:
+    def _remember_brand(self, brand: str) -> None:
+        if not any(item.casefold() == brand.casefold() for item in self.data["brands"]):
+            self.data["brands"].append(brand)
+            self.data["brands"].sort(key=str.casefold)
+
+    def _clean_device(self, payload: dict[str, Any]) -> dict[str, Any]:
         allowed = (
             "name",
             "device_type",
@@ -283,8 +313,25 @@ class InventoryStore:
         cleaned = {
             key: str(payload.get(key, "") or "").strip()[:1000] for key in allowed
         }
-        if not cleaned["name"]:
-            raise InventoryError("Device name is required")
+        for brand in self.data["brands"]:
+            if brand.casefold() == cleaned["brand"].casefold():
+                cleaned["brand"] = brand
+                break
+        if cleaned["protocol"]:
+            cleaned["protocol"] = self._normalise_protocol(cleaned["protocol"])
+        required = {
+            "name": "Device name",
+            "device_type": "Type",
+            "brand": "Brand",
+            "area": "Area",
+            "protocol": "Protocol",
+            "mac": "MAC / IEEE",
+        }
+        missing = [label for key, label in required.items() if not cleaned[key]]
+        if cleaned["protocol"] in IP_PROTOCOLS and not cleaned["ip_address"]:
+            missing.append("IP address")
+        if missing:
+            raise InventoryError("Required fields: " + ", ".join(missing))
         cleaned["status"] = cleaned["status"] or "unknown"
         return cleaned
 

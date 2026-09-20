@@ -58,37 +58,52 @@ def load_storage_module():
 storage = load_storage_module()
 
 
+def device_payload(name, protocol, **values):
+    payload = {
+        "name": name,
+        "device_type": "Sensor",
+        "brand": "Test Brand",
+        "area": "Test Area",
+        "protocol": protocol,
+        "mac": "00:11:22:33:44:55",
+    }
+    if protocol.lower().replace("-", "_") in {"wifi", "wi_fi", "ethernet"}:
+        payload["ip_address"] = "192.168.1.10"
+    payload.update(values)
+    return payload
+
+
 class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.manager = storage.InventoryStore(None)
         await self.manager.async_load()
 
     async def test_default_protocol_ranges(self):
-        wifi = await self.manager.async_add({"name": "Router", "protocol": "Wi-Fi"})
-        zigbee = await self.manager.async_add({"name": "Motion", "protocol": "ZigBee"})
+        wifi = await self.manager.async_add(device_payload("Router", "Wi-Fi"))
+        zigbee = await self.manager.async_add(device_payload("Motion", "ZigBee"))
         bluetooth = await self.manager.async_add(
-            {"name": "Thermometer", "protocol": "Bluetooth"}
+            device_payload("Thermometer", "Bluetooth")
         )
         self.assertEqual(wifi["device_code"], 1001)
         self.assertEqual(zigbee["device_code"], 2001)
         self.assertEqual(bluetooth["device_code"], 3001)
 
     async def test_id_is_stable_and_never_reused(self):
-        first = await self.manager.async_add({"name": "One", "protocol": "wifi"})
+        first = await self.manager.async_add(device_payload("One", "wifi"))
         changed = await self.manager.async_update(
             first["id"], {"protocol": "zigbee"}
         )
         self.assertEqual(changed["device_code"], 1001)
         await self.manager.async_delete(first["id"])
-        second = await self.manager.async_add({"name": "Two", "protocol": "wifi"})
+        second = await self.manager.async_add(device_payload("Two", "wifi"))
         self.assertEqual(second["device_code"], 1002)
 
     async def test_import_preserves_excel_code_and_advances_counter(self):
         result = await self.manager.async_import(
-            [{"name": "Existing sensor", "protocol": "zigbee", "device_code": 2014}]
+            [device_payload("Existing sensor", "zigbee", device_code=2014)]
         )
         new_device = await self.manager.async_add(
-            {"name": "New sensor", "protocol": "zigbee"}
+            device_payload("New sensor", "zigbee")
         )
         self.assertEqual(result["imported"], 1)
         self.assertEqual(new_device["device_code"], 2015)
@@ -96,11 +111,7 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
     async def test_entity_name_is_stored_and_updated(self):
         device = await self.manager.async_import(
             [
-                {
-                    "name": "Shelly lamp",
-                    "protocol": "wifi",
-                    "entity_name": "lamp",
-                }
+                device_payload("Shelly lamp", "wifi", entity_name="lamp")
             ]
         )
         self.assertEqual(device["imported"], 1)
@@ -111,6 +122,22 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
             stored["id"], {"entity_name": "living_room_lamp"}
         )
         self.assertEqual(updated["entity_name"], "living_room_lamp")
+
+    async def test_import_adds_new_brand_to_settings(self):
+        await self.manager.async_import(
+            [device_payload("Imported", "zigbee", brand="Imported Brand")]
+        )
+        self.assertIn("Imported Brand", self.manager.data["brands"])
+
+    async def test_required_fields_and_ip_validation(self):
+        with self.assertRaisesRegex(storage.InventoryError, "Type"):
+            await self.manager.async_add(
+                device_payload("Incomplete", "zigbee", device_type="")
+            )
+        with self.assertRaisesRegex(storage.InventoryError, "IP address"):
+            await self.manager.async_add(
+                device_payload("No IP", "wifi", ip_address="")
+            )
 
     def test_common_entity_name(self):
         self.assertEqual(
