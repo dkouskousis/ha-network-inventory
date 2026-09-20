@@ -13,7 +13,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
-from .storage import InventoryError, InventoryStore
+from .storage import InventoryError, InventoryStore, common_entity_name
 
 
 def async_register_commands(hass: HomeAssistant) -> None:
@@ -210,7 +210,7 @@ def _home_assistant_devices(
                 "protocol": _guess_protocol(domains),
                 "integration": ", ".join(domains),
                 "device_identifier": _first_identifier(device.identifiers),
-                "entity_id": ", ".join(entity_ids),
+                "entity_name": common_entity_name(entity_ids),
                 "status": "unknown",
             }
         )

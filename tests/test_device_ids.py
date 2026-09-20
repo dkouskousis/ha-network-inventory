@@ -93,24 +93,36 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["imported"], 1)
         self.assertEqual(new_device["device_code"], 2015)
 
-    async def test_entity_id_is_stored_and_updated(self):
+    async def test_entity_name_is_stored_and_updated(self):
         device = await self.manager.async_import(
             [
                 {
                     "name": "Shelly lamp",
                     "protocol": "wifi",
-                    "entity_id": "light.lamp, sensor.lamp_power",
+                    "entity_name": "lamp",
                 }
             ]
         )
         self.assertEqual(device["imported"], 1)
         stored = self.manager.data["devices"][0]
-        self.assertEqual(stored["entity_id"], "light.lamp, sensor.lamp_power")
+        self.assertEqual(stored["entity_name"], "lamp")
 
         updated = await self.manager.async_update(
-            stored["id"], {"entity_id": "light.lamp"}
+            stored["id"], {"entity_name": "living_room_lamp"}
         )
-        self.assertEqual(updated["entity_id"], "light.lamp")
+        self.assertEqual(updated["entity_name"], "living_room_lamp")
+
+    def test_common_entity_name(self):
+        self.assertEqual(
+            storage.common_entity_name(
+                [
+                    "light.lamp_10",
+                    "sensor.lamp_10_power",
+                    "sensor.lamp_10_temperature",
+                ]
+            ),
+            "lamp_10",
+        )
 
 
 if __name__ == "__main__":

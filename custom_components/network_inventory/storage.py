@@ -23,6 +23,20 @@ class InventoryError(ValueError):
     """Raised when inventory data is invalid."""
 
 
+def common_entity_name(entity_ids: list[str]) -> str:
+    """Return the common name shared by a device's entity IDs."""
+    names = [entity_id.partition(".")[2].split("_") for entity_id in entity_ids]
+    if not names:
+        return ""
+    common: list[str] = []
+    for index, part in enumerate(names[0]):
+        if all(len(name) > index and name[index] == part for name in names[1:]):
+            common.append(part)
+        else:
+            break
+    return "_".join(common)
+
+
 class InventoryStore:
     """Manage the inventory and its monotonically increasing IDs."""
 
@@ -260,7 +274,7 @@ class InventoryStore:
             "ip_address",
             "protocol",
             "device_identifier",
-            "entity_id",
+            "entity_name",
             "comments",
             "status",
             "ha_device_id",
