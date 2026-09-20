@@ -1,0 +1,64 @@
+# Network Inventory for Home Assistant
+
+A small, local device inventory for Home Assistant. It adds a dedicated sidebar panel for smart-home and network devices, including equipment that is not represented by an entity in Home Assistant.
+
+## Features
+
+- Permanent numeric Device ID for every device
+- Separate configurable number range for each protocol
+- Manual device management
+- Import from the Home Assistant Device Registry
+- Import and export compatible CSV files
+- Search and protocol filters
+- Responsive desktop and mobile interface
+- English and Greek UI
+- Data included in Home Assistant backups
+- Admin-only access through Home Assistant authentication
+
+## Default Device ID ranges
+
+| Protocol | Range |
+| --- | ---: |
+| Wi-Fi | 1001–1999 |
+| Zigbee | 2001–2999 |
+| Bluetooth | 3001–3999 |
+| Thread | 4001–4999 |
+| Z-Wave | 5001–5999 |
+| Ethernet | 6001–6999 |
+| Matter | 7001–7999 |
+| Other | 9001–9999 |
+
+The next number is issued atomically when a device is created. Device IDs do not change when a device is edited or moved to another protocol. Deleted IDs are never reused. Ranges can be edited from the Settings tab, provided they remain non-overlapping and still contain existing IDs.
+
+## Installation with HACS
+
+1. Open HACS.
+2. Open **Integrations**.
+3. Select the three-dot menu and **Custom repositories**.
+4. Add `https://github.com/dkouskousis/ha-network-inventory` as an **Integration**.
+5. Download **Network Inventory**.
+6. Restart Home Assistant.
+7. Open **Settings → Devices & services → Add integration**.
+8. Search for **Network Inventory** and add it.
+
+The **Network Inventory** entry will then appear in the Home Assistant sidebar for administrator accounts.
+
+## Manual installation
+
+Copy `custom_components/network_inventory` to the `custom_components` directory in the Home Assistant configuration folder. Restart Home Assistant and add the integration from **Settings → Devices & services**.
+
+## CSV columns
+
+The importer recognises these spreadsheet columns:
+
+```text
+Device Code, MAC / IEEE Address, Device IP, Device Type, Brand,
+Area, Device Name, Device ID, Comments, Protocol
+```
+
+`Device Name` is required. `Device Code` can be omitted to assign the next available permanent ID automatically. The importer also accepts `Wi-Fi`, `ZigBee`, `Bluetooth`, `Thread`, `Z-Wave`, `Ethernet`, `Matter`, and `Other` protocol values.
+
+## Storage and privacy
+
+Inventory data is stored locally in Home Assistant's private `.storage` directory. The panel and its WebSocket commands require an administrator account. Passwords and credentials are intentionally not supported as inventory fields.
+

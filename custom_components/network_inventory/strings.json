@@ -1,0 +1,15 @@
+{
+  "title": "Network Inventory",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Network Inventory",
+        "description": "Create a local inventory for network and smart-home devices."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Network Inventory is already configured."
+    }
+  }
+}
+
