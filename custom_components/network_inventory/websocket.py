@@ -27,6 +27,9 @@ def async_register_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_update)
     websocket_api.async_register_command(hass, websocket_delete)
     websocket_api.async_register_command(hass, websocket_import)
+    websocket_api.async_register_command(hass, websocket_export)
+    websocket_api.async_register_command(hass, websocket_restore)
+    websocket_api.async_register_command(hass, websocket_restore_backup)
     websocket_api.async_register_command(hass, websocket_settings)
     websocket_api.async_register_command(hass, websocket_unifi_connect)
     websocket_api.async_register_command(hass, websocket_unifi_disconnect)
@@ -91,6 +94,9 @@ async def websocket_list(
     data = await _manager(hass).async_snapshot()
     await _unifi(hass).async_ensure_loaded()
     unifi_matches, unifi_items = match_unifi_items(data["devices"], _unifi(hass).items)
+    if await _manager(hass).async_sync_unifi(unifi_matches):
+        data = await _manager(hass).async_snapshot()
+        unifi_matches, unifi_items = match_unifi_items(data["devices"], _unifi(hass).items)
     data["integrations"] = {
         "unifi": _unifi(hass).status(),
         "niimbot": _niimbot_status(hass, data.get("niimbot", {})),
@@ -203,6 +209,56 @@ async def websocket_import(
         result = await _manager(hass).async_import(msg["devices"])
     except InventoryError as err:
         connection.send_error(msg["id"], "invalid_import", str(err))
+        return
+    connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command({"type": f"{DOMAIN}/export"})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_export(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Export a portable JSON backup."""
+    connection.send_result(msg["id"], await _manager(hass).async_export())
+
+
+@websocket_api.websocket_command(
+    {"type": f"{DOMAIN}/restore", vol.Required("backup"): dict}
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_restore(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Restore a portable JSON backup."""
+    try:
+        result = await _manager(hass).async_restore(msg["backup"])
+    except InventoryError as err:
+        connection.send_error(msg["id"], "invalid_backup", str(err))
+        return
+    connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command(
+    {"type": f"{DOMAIN}/restore_backup", vol.Required("backup_id"): str}
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_restore_backup(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Restore an automatic backup."""
+    try:
+        result = await _manager(hass).async_restore_backup(msg["backup_id"])
+    except InventoryError as err:
+        connection.send_error(msg["id"], "invalid_backup", str(err))
         return
     connection.send_result(msg["id"], result)
 

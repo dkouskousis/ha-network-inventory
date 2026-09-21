@@ -5,10 +5,19 @@ NAME = "Network Inventory"
 STORAGE_KEY = f"{DOMAIN}.data"
 STORAGE_VERSION = 1
 PANEL_URL = "/network_inventory_static"
-VERSION = "0.6.6"
+VERSION = "0.7.0"
 UNIFI_STORAGE_KEY = f"{DOMAIN}.unifi"
 DEVICE_TYPES_VERSION = 2
 IP_PROTOCOLS = {"wifi", "ethernet"}
+
+DEFAULT_TAGS = [
+    "Critical",
+    "IoT",
+    "Guest",
+    "Security",
+    "Battery",
+    "Outdoor",
+]
 
 DEFAULT_PROTOCOLS = {
     "wifi": {"label": "Wi-Fi", "start": 1001, "end": 1999, "color": "#2563eb"},

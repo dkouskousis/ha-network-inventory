@@ -14,6 +14,7 @@ from homeassistant.helpers.storage import Store
 from .const import (
     DEFAULT_DEVICE_TYPES,
     DEFAULT_PROTOCOLS,
+    DEFAULT_TAGS,
     DEVICE_TYPES_VERSION,
     IP_PROTOCOLS,
     STORAGE_KEY,
@@ -59,6 +60,9 @@ class InventoryStore:
             "device_types": list(DEFAULT_DEVICE_TYPES),
             "device_types_version": DEVICE_TYPES_VERSION,
             "brands": [],
+            "tags": list(DEFAULT_TAGS),
+            "logs": [],
+            "backups": [],
             "counters": {
                 key: value["start"] - 1 for key, value in DEFAULT_PROTOCOLS.items()
             },
@@ -66,6 +70,9 @@ class InventoryStore:
         self.data.setdefault("devices", [])
         self.data.setdefault("protocols", deepcopy(DEFAULT_PROTOCOLS))
         self.data.setdefault("device_types", list(DEFAULT_DEVICE_TYPES))
+        self.data.setdefault("tags", list(DEFAULT_TAGS))
+        self.data.setdefault("logs", [])
+        self.data.setdefault("backups", [])
         self.data.setdefault(
             "niimbot",
             {"device_id": "", "label_width_mm": 30, "label_height_mm": 15, "margin_mm": 1.5, "top_margin_mm": 2},
@@ -97,12 +104,69 @@ class InventoryStore:
         self.data.setdefault("counters", {})
         for key, value in self.data["protocols"].items():
             self.data["counters"].setdefault(key, value["start"] - 1)
+        for device in self.data["devices"]:
+            device.setdefault("network", "")
+            device.setdefault("vlan", "")
+            device.setdefault("ssid", "")
+            device.setdefault("connected_device", "")
+            device.setdefault("switch_port", "")
+            device.setdefault("tags", [])
         if migrated:
             await self._store.async_save(self.data)
 
     async def async_snapshot(self) -> dict[str, Any]:
         """Return a safe copy of all stored data."""
-        return deepcopy(self.data)
+        result = deepcopy(self.data)
+        result["backups"] = [
+            {key: value for key, value in backup.items() if key != "data"}
+            for backup in result.get("backups", [])
+        ]
+        return result
+
+    async def async_export(self) -> dict[str, Any]:
+        """Return a portable JSON backup."""
+        return {
+            "schema": "network_inventory_backup",
+            "version": 1,
+            "exported_at": _now(),
+            "data": self._backup_data(),
+        }
+
+    async def async_restore(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Restore a JSON export after preserving the current state."""
+        async with self._lock:
+            incoming = payload.get("data") if payload.get("schema") == "network_inventory_backup" else payload
+            if not isinstance(incoming, dict):
+                raise InventoryError("Invalid Network Inventory backup")
+            restored = self._validate_restore(incoming)
+            self._create_backup("before_restore")
+            backups = self.data["backups"]
+            self.data = restored
+            self.data["backups"] = backups
+            self._record_log("restore", details="JSON backup restored", source="restore")
+            await self._store.async_save(self.data)
+            return await self.async_snapshot()
+
+    async def async_restore_backup(self, backup_id: str) -> dict[str, Any]:
+        """Restore one automatically-created internal backup."""
+        async with self._lock:
+            backup = next(
+                (item for item in self.data["backups"] if item["id"] == backup_id),
+                None,
+            )
+            if backup is None:
+                raise InventoryError("Backup not found")
+            target_data = deepcopy(backup["data"])
+            restored = self._validate_restore(target_data)
+            self._create_backup("before_restore")
+            backups = self.data["backups"]
+            self.data = restored
+            self.data["backups"] = backups
+            self._record_log(
+                "restore", details=f"Automatic backup restored: {backup['created_at']}", source="backup"
+            )
+            await self._store.async_save(self.data)
+            return await self.async_snapshot()
 
     async def async_save_niimbot(
         self,
@@ -142,6 +206,8 @@ class InventoryStore:
             )
             self.data["devices"].append(device)
             self._remember_brand(device["brand"])
+            self._remember_tags(device["tags"])
+            self._record_log("add", device=device, changes=self._device_changes({}, device))
             await self._store.async_save(self.data)
             return deepcopy(device)
 
@@ -155,6 +221,7 @@ class InventoryStore:
                 "device_code" in payload and payload.get("device_code") in (None, "")
             )
             updated = self._clean_device({**device, **payload})
+            previous = deepcopy(device)
             protected = {
                 "id": device["id"],
                 "device_code": (
@@ -170,6 +237,10 @@ class InventoryStore:
             device["protocol"] = self._normalise_protocol(device.get("protocol"))
             device["updated_at"] = _now()
             self._remember_brand(device["brand"])
+            self._remember_tags(device["tags"])
+            changes = self._device_changes(previous, device)
+            if changes:
+                self._record_log("update", device=device, changes=changes)
             await self._store.async_save(self.data)
             return deepcopy(device)
 
@@ -177,12 +248,16 @@ class InventoryStore:
         """Delete a device. Its numeric code remains consumed."""
         async with self._lock:
             device = self._find(internal_id)
+            self._record_log("delete", device=device, changes=self._device_changes(device, {}))
             self.data["devices"].remove(device)
             await self._store.async_save(self.data)
 
-    async def async_import(self, rows: list[dict[str, Any]]) -> dict[str, int]:
+    async def async_import(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
         """Import rows, preserving valid unique codes when supplied."""
         async with self._lock:
+            backup_id = ""
+            if len(rows) > 1:
+                backup_id = self._create_backup("before_bulk_import")["id"]
             imported = 0
             skipped = 0
             existing_codes = {
@@ -237,6 +312,10 @@ class InventoryStore:
                 )
                 self.data["devices"].append(device)
                 self._remember_brand(device["brand"])
+                self._remember_tags(device["tags"])
+                self._record_log(
+                    "import", device=device, changes=self._device_changes({}, device), source="import"
+                )
                 existing_codes.add(device_code)
                 if device.get("ha_device_id"):
                     existing_ha_ids.add(device["ha_device_id"])
@@ -245,11 +324,17 @@ class InventoryStore:
                 imported += 1
 
             await self._store.async_save(self.data)
-            return {"imported": imported, "skipped": skipped}
+            return {"imported": imported, "skipped": skipped, "backup_id": backup_id}
 
     async def async_save_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Save protocol ranges, device types, and brands."""
+        """Save protocol ranges, device types, brands, and tags."""
         async with self._lock:
+            previous = {
+                "protocols": deepcopy(self.data["protocols"]),
+                "device_types": deepcopy(self.data["device_types"]),
+                "brands": deepcopy(self.data["brands"]),
+                "tags": deepcopy(self.data["tags"]),
+            }
             protocols = payload.get("protocols", self.data["protocols"])
             cleaned: dict[str, dict[str, Any]] = {}
             ranges: list[tuple[int, int, str]] = []
@@ -306,13 +391,48 @@ class InventoryStore:
                 device["brand"] for device in self.data["devices"] if device["brand"]
             )
 
+            tags = {
+                str(item).strip()[:60]
+                for item in payload.get("tags", self.data["tags"])
+                if str(item).strip()
+            }
+            tags.update(tag for device in self.data["devices"] for tag in device.get("tags", []))
+
             self.data["protocols"] = cleaned
             self.data["device_types"] = device_types
             self.data["brands"] = sorted(brands, key=str.casefold)
+            self.data["tags"] = sorted(tags, key=str.casefold)
             for key, config in cleaned.items():
                 self.data["counters"].setdefault(key, config["start"] - 1)
+            current = {key: deepcopy(self.data[key]) for key in previous}
+            changes = self._device_changes(previous, current)
+            if changes:
+                self._record_log("settings", changes=changes)
             await self._store.async_save(self.data)
             return await self.async_snapshot()
+
+    async def async_sync_unifi(self, matches: dict[str, dict[str, Any]]) -> bool:
+        """Persist network topology returned by UniFi for matching devices."""
+        async with self._lock:
+            changed = False
+            fields = ("network", "vlan", "ssid", "connected_device", "switch_port")
+            for device in self.data["devices"]:
+                item = matches.get(str(device["id"]))
+                if not item:
+                    continue
+                previous = deepcopy(device)
+                for field in fields:
+                    value = str(item.get(field, "") or "").strip()[:1000]
+                    if value:
+                        device[field] = value
+                changes = self._device_changes(previous, device)
+                if changes:
+                    device["updated_at"] = _now()
+                    self._record_log("update", device=device, changes=changes, source="unifi")
+                    changed = True
+            if changed:
+                await self._store.async_save(self.data)
+            return changed
 
     def _next_device_code(self, protocol: str) -> int:
         config = self.data["protocols"][protocol]
@@ -352,6 +472,14 @@ class InventoryStore:
             self.data["brands"].append(brand)
             self.data["brands"].sort(key=str.casefold)
 
+    def _remember_tags(self, tags: list[str]) -> None:
+        current = {item.casefold() for item in self.data["tags"]}
+        for tag in tags:
+            if tag.casefold() not in current:
+                self.data["tags"].append(tag)
+                current.add(tag.casefold())
+        self.data["tags"].sort(key=str.casefold)
+
     def _clean_device(self, payload: dict[str, Any]) -> dict[str, Any]:
         allowed = (
             "name",
@@ -371,6 +499,11 @@ class InventoryStore:
             "unifi_id",
             "unifi_kind",
             "unifi_site_id",
+            "network",
+            "vlan",
+            "ssid",
+            "connected_device",
+            "switch_port",
         )
         cleaned = {
             key: str(payload.get(key, "") or "").strip()[:1000] for key in allowed
@@ -395,7 +528,122 @@ class InventoryStore:
         if missing:
             raise InventoryError("Required fields: " + ", ".join(missing))
         cleaned["status"] = cleaned["status"] or "unknown"
+        raw_tags = payload.get("tags", [])
+        if isinstance(raw_tags, str):
+            raw_tags = [item.strip() for item in raw_tags.split(",")]
+        if not isinstance(raw_tags, list):
+            raise InventoryError("Tags must be a list")
+        canonical = {tag.casefold(): tag for tag in self.data["tags"]}
+        cleaned["tags"] = sorted(
+            {
+                canonical.get(str(tag).strip().casefold(), str(tag).strip()[:60])
+                for tag in raw_tags
+                if str(tag).strip()
+            },
+            key=str.casefold,
+        )
         return cleaned
+
+    def _backup_data(self) -> dict[str, Any]:
+        return deepcopy({key: value for key, value in self.data.items() if key != "backups"})
+
+    def _create_backup(self, reason: str) -> dict[str, Any]:
+        backup = {
+            "id": uuid4().hex,
+            "created_at": _now(),
+            "reason": reason,
+            "device_count": len(self.data["devices"]),
+            "data": self._backup_data(),
+        }
+        self.data["backups"].insert(0, backup)
+        del self.data["backups"][10:]
+        return backup
+
+    def _validate_restore(self, incoming: dict[str, Any]) -> dict[str, Any]:
+        devices = incoming.get("devices")
+        protocols = incoming.get("protocols")
+        if not isinstance(devices, list) or not isinstance(protocols, dict) or not protocols:
+            raise InventoryError("Backup must contain devices and protocols")
+        candidate = deepcopy(incoming)
+        candidate.setdefault("device_types", list(DEFAULT_DEVICE_TYPES))
+        candidate.setdefault("brands", [])
+        candidate.setdefault("tags", list(DEFAULT_TAGS))
+        candidate.setdefault("logs", [])
+        candidate.setdefault("counters", {})
+        candidate.setdefault(
+            "niimbot",
+            {"device_id": "", "label_width_mm": 30, "label_height_mm": 15, "margin_mm": 1.5, "top_margin_mm": 2},
+        )
+        candidate["backups"] = []
+        old_data = self.data
+        self.data = candidate
+        try:
+            cleaned_devices: list[dict[str, Any]] = []
+            codes: set[int] = set()
+            for raw in devices:
+                if not isinstance(raw, dict):
+                    raise InventoryError("Invalid device in backup")
+                cleaned = self._clean_device(raw)
+                code = _to_int(raw.get("device_code"))
+                if code is None or code in codes:
+                    raise InventoryError("Backup contains an invalid or duplicate Device ID")
+                config = protocols[cleaned["protocol"]]
+                if not config["start"] <= code <= config["end"]:
+                    raise InventoryError(f"Device code {code} is outside its protocol range")
+                now = _now()
+                cleaned.update(
+                    {
+                        "id": str(raw.get("id") or uuid4().hex),
+                        "device_code": code,
+                        "created_at": str(raw.get("created_at") or now),
+                        "updated_at": str(raw.get("updated_at") or now),
+                    }
+                )
+                cleaned_devices.append(cleaned)
+                codes.add(code)
+            candidate["devices"] = cleaned_devices
+            candidate["logs"] = [item for item in candidate["logs"] if isinstance(item, dict)][-1000:]
+            candidate["tags"] = sorted({str(item).strip()[:60] for item in candidate["tags"] if str(item).strip()}, key=str.casefold)
+            candidate["brands"] = sorted({str(item).strip()[:100] for item in candidate["brands"] if str(item).strip()}, key=str.casefold)
+            for key, config in protocols.items():
+                used = [device["device_code"] for device in cleaned_devices if device["protocol"] == key]
+                candidate["counters"][key] = max(candidate["counters"].get(key, config["start"] - 1), max(used, default=config["start"] - 1))
+            return candidate
+        finally:
+            self.data = old_data
+
+    def _record_log(
+        self,
+        action: str,
+        *,
+        device: dict[str, Any] | None = None,
+        changes: list[dict[str, Any]] | None = None,
+        source: str = "manual",
+        details: str = "",
+    ) -> None:
+        self.data["logs"].append(
+            {
+                "id": uuid4().hex,
+                "timestamp": _now(),
+                "action": action,
+                "source": source,
+                "device_id": str(device.get("id", "")) if device else "",
+                "device_code": device.get("device_code", "") if device else "",
+                "device_name": str(device.get("name", "")) if device else "",
+                "changes": changes or [],
+                "details": details,
+            }
+        )
+        self.data["logs"] = self.data["logs"][-1000:]
+
+    @staticmethod
+    def _device_changes(before: dict[str, Any], after: dict[str, Any]) -> list[dict[str, Any]]:
+        ignored = {"id", "created_at", "updated_at"}
+        return [
+            {"field": key, "old": deepcopy(before.get(key, "")), "new": deepcopy(after.get(key, ""))}
+            for key in sorted((set(before) | set(after)) - ignored)
+            if before.get(key, "") != after.get(key, "")
+        ]
 
 
 def _slug(value: Any) -> str:

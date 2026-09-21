@@ -66,13 +66,17 @@ class UniFiTests(unittest.TestCase):
         client = {
             "id": "client-1", "name": "Phone", "type": "WIRELESS",
             "macAddress": "00:11:22:33:44:55", "ipAddress": "192.168.1.20",
-            "uplinkDeviceId": "ap-1",
+            "uplinkDeviceId": "ap-1", "networkName": "IoT", "vlanId": 30,
+            "ssid": "House IoT",
         }
         result = unifi.UniFiCloudManager._client_item(
             client, {"ap-1": {"name": "Living Room AP", "model": "U6-PRO"}}
         )
         self.assertEqual(result["protocol"], "wifi")
         self.assertEqual(result["uplink_name"], "Living Room AP")
+        self.assertEqual(result["network"], "IoT")
+        self.assertEqual(result["vlan"], "30")
+        self.assertEqual(result["ssid"], "House IoT")
 
     def test_network_site_uuid_is_used_instead_of_site_manager_id(self):
         manager_sites = [

@@ -155,6 +155,50 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["top_margin_mm"], 2)
         self.assertEqual(self.manager.data["niimbot"]["device_id"], "printer-device-id")
 
+    async def test_network_fields_tags_and_change_log_are_stored(self):
+        device = await self.manager.async_add(
+            device_payload(
+                "Outdoor camera",
+                "wifi",
+                network="IoT network",
+                vlan="30",
+                ssid="House IoT",
+                connected_device="Garden AP",
+                switch_port="8",
+                tags=["IoT", "Security", "Outdoor"],
+            )
+        )
+        self.assertEqual(device["vlan"], "30")
+        self.assertEqual(device["tags"], ["IoT", "Outdoor", "Security"])
+        updated = await self.manager.async_update(device["id"], {"switch_port": "9"})
+        self.assertEqual(updated["switch_port"], "9")
+        log = self.manager.data["logs"][-1]
+        self.assertEqual(log["action"], "update")
+        self.assertEqual(log["changes"], [{"field": "switch_port", "old": "8", "new": "9"}])
+
+    async def test_bulk_import_creates_restorable_backup(self):
+        original = await self.manager.async_add(device_payload("Original", "wifi"))
+        result = await self.manager.async_import(
+            [
+                device_payload("Sensor one", "zigbee", mac="00:11:22:33:44:66"),
+                device_payload("Sensor two", "zigbee", mac="00:11:22:33:44:77"),
+            ]
+        )
+        self.assertTrue(result["backup_id"])
+        self.assertEqual(len(self.manager.data["devices"]), 3)
+        await self.manager.async_restore_backup(result["backup_id"])
+        self.assertEqual([item["id"] for item in self.manager.data["devices"]], [original["id"]])
+
+    async def test_json_export_and_restore(self):
+        await self.manager.async_add(device_payload("Router", "wifi", tags=["Critical"]))
+        exported = await self.manager.async_export()
+        await self.manager.async_add(
+            device_payload("Motion", "zigbee", mac="00:11:22:33:44:88")
+        )
+        await self.manager.async_restore(exported)
+        self.assertEqual(len(self.manager.data["devices"]), 1)
+        self.assertEqual(self.manager.data["devices"][0]["tags"], ["Critical"])
+
     async def test_required_fields_and_ip_validation(self):
         with self.assertRaisesRegex(storage.InventoryError, "Type"):
             await self.manager.async_add(

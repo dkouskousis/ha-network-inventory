@@ -1,7 +1,7 @@
 const TEXT = {
   en: {
     title: "Network Inventory", overview: "Overview", devices: "Devices", homeAssistant: "Home Assistant",
-    settings: "Settings", integrations: "Integrations", addDevice: "Add device", total: "Total devices", areas: "Areas", brands: "Brands",
+    settings: "Settings", integrations: "Integrations", logs: "Logs", addDevice: "Add device", total: "Total devices", areas: "Areas", brands: "Brands",
     protocols: "Protocols", search: "Search devices…", allProtocols: "All protocols", code: "Device ID",
     name: "Device name", type: "Type", brand: "Brand", model: "Model", area: "Area", address: "MAC / IEEE",
     ip: "IP address", protocol: "Protocol", identifier: "Device identifier", entityName: "Entity name", comments: "Comments", status: "Status",
@@ -30,11 +30,17 @@ const TEXT = {
     niimbotHelp: "Use the NIIMBOT printer configured in Home Assistant to print device labels.", selectPrinter: "Select printer",
     printerReady: "Printer ready", printerMissing: "NIIMBOT is not configured in Home Assistant", printLabel: "Print label",
     confirmPrint: "Print a label for this device?", printed: "Label sent to printer", labelWidth: "Label length (mm)",
-    labelHeight: "Label width (mm)", labelMargin: "Side margin (mm)", labelTopMargin: "Top margin (mm)"
+    labelHeight: "Label width (mm)", labelMargin: "Side margin (mm)", labelTopMargin: "Top margin (mm)",
+    network: "Network", vlan: "VLAN", ssid: "SSID", connectedDevice: "AP / switch", switchPort: "Switch port",
+    tags: "Tags", allTags: "All tags", tagSettings: "Custom tags (one per line)", networkDetails: "Network details",
+    backups: "Backup & restore", exportJson: "Export JSON", restoreJson: "Restore JSON", automaticBackups: "Automatic backups",
+    restore: "Restore", confirmRestore: "Restore this backup? Current data will be backed up first.", restored: "Backup restored",
+    logAction: "Action", logDevice: "Device", logChange: "Changes", logTime: "Date / time", logSource: "Source",
+    noLogs: "No changes have been recorded yet.", backupBeforeImport: "An automatic backup was created before the import."
   },
   el: {
     title: "Καταγραφή Συσκευών", overview: "Επισκόπηση", devices: "Συσκευές", homeAssistant: "Home Assistant",
-    settings: "Ρυθμίσεις", integrations: "Integrations", addDevice: "Νέα συσκευή", total: "Σύνολο συσκευών", areas: "Χώροι", brands: "Κατασκευαστές",
+    settings: "Ρυθμίσεις", integrations: "Integrations", logs: "Logs", addDevice: "Νέα συσκευή", total: "Σύνολο συσκευών", areas: "Χώροι", brands: "Κατασκευαστές",
     protocols: "Πρωτόκολλα", search: "Αναζήτηση συσκευών…", allProtocols: "Όλα τα πρωτόκολλα", code: "Device ID",
     name: "Όνομα συσκευής", type: "Τύπος", brand: "Brand", model: "Μοντέλο", area: "Χώρος", address: "MAC / IEEE",
     ip: "Διεύθυνση IP", protocol: "Πρωτόκολλο", identifier: "Αναγνωριστικό συσκευής", entityName: "Όνομα entity", comments: "Σχόλια", status: "Κατάσταση",
@@ -63,7 +69,13 @@ const TEXT = {
     niimbotHelp: "Χρησιμοποίησε τον NIIMBOT που έχει ρυθμιστεί στο Home Assistant για εκτύπωση ετικετών συσκευών.", selectPrinter: "Επιλογή εκτυπωτή",
     printerReady: "Ο εκτυπωτής είναι έτοιμος", printerMissing: "Το NIIMBOT δεν έχει ρυθμιστεί στο Home Assistant", printLabel: "Εκτύπωση label",
     confirmPrint: "Να εκτυπωθεί label για αυτή τη συσκευή;", printed: "Το label στάλθηκε στον εκτυπωτή", labelWidth: "Μήκος label (mm)",
-    labelHeight: "Πλάτος label (mm)", labelMargin: "Πλευρικό περιθώριο (mm)", labelTopMargin: "Επάνω περιθώριο (mm)"
+    labelHeight: "Πλάτος label (mm)", labelMargin: "Πλευρικό περιθώριο (mm)", labelTopMargin: "Επάνω περιθώριο (mm)",
+    network: "Δίκτυο", vlan: "VLAN", ssid: "SSID", connectedDevice: "AP / switch", switchPort: "Θύρα switch",
+    tags: "Tags", allTags: "Όλα τα tags", tagSettings: "Custom tags (ένα ανά γραμμή)", networkDetails: "Στοιχεία δικτύου",
+    backups: "Backup & επαναφορά", exportJson: "Εξαγωγή JSON", restoreJson: "Επαναφορά JSON", automaticBackups: "Αυτόματα backups",
+    restore: "Επαναφορά", confirmRestore: "Να γίνει επαναφορά αυτού του backup; Θα αποθηκευτεί πρώτα η τωρινή κατάσταση.", restored: "Το backup επαναφέρθηκε",
+    logAction: "Ενέργεια", logDevice: "Συσκευή", logChange: "Αλλαγές", logTime: "Ημερομηνία / ώρα", logSource: "Πηγή",
+    noLogs: "Δεν έχουν καταγραφεί αλλαγές ακόμη.", backupBeforeImport: "Δημιουργήθηκε αυτόματο backup πριν από την εισαγωγή."
   }
 };
 
@@ -80,6 +92,7 @@ class NetworkInventoryPanel extends HTMLElement {
     this.areaFilter = "";
     this.statusFilter = "";
     this.ipFilter = "";
+    this.tagFilter = "";
     this._started = false;
   }
 
@@ -123,6 +136,7 @@ class NetworkInventoryPanel extends HTMLElement {
       : this.view === "ha" ? this.renderHaDevices()
       : this.view === "unifi" ? this.renderUnifi()
       : this.view === "integrations" ? this.renderIntegrations()
+      : this.view === "logs" ? this.renderLogs()
       : this.renderSettings();
     this.shadowRoot.innerHTML = `
       <style>${BASE_CSS}</style>
@@ -137,6 +151,7 @@ class NetworkInventoryPanel extends HTMLElement {
           ${this.nav("ha", "mdi:home-assistant", "homeAssistant", this.data.ha_devices.length)}
           ${this.data.integrations?.unifi?.connected ? this.nav("unifi", "mdi:access-point-network", "unifi", this.data.unifi_items.length) : ""}
           ${this.nav("integrations", "mdi:connection", "integrations")}
+          ${this.nav("logs", "mdi:history", "logs", this.data.logs?.length || null)}
           ${this.nav("settings", "mdi:cog-outline", "settings")}
         </nav>
         <main>${content}</main>
@@ -188,6 +203,7 @@ class NetworkInventoryPanel extends HTMLElement {
     const brandOptions = this.data.brands.map(value => option(value, this.brandFilter)).join("");
     const areas = [...new Set([...this.data.areas, ...this.data.devices.map(device => device.area).filter(Boolean)])].sort((a,b) => a.localeCompare(b));
     const areaOptions = areas.map(value => option(value, this.areaFilter)).join("");
+    const tagOptions = (this.data.tags || []).map(value => option(value, this.tagFilter)).join("");
     const devices = this.filteredDevices();
     return `
       <section class="toolbar card">
@@ -203,12 +219,13 @@ class NetworkInventoryPanel extends HTMLElement {
         <select id="area-filter"><option value="">${this.t("allAreas")}</option>${areaOptions}</select>
         <select id="status-filter"><option value="">${this.t("allStatuses")}</option><option value="online" ${this.statusFilter === "online" ? "selected" : ""}>Online</option><option value="offline" ${this.statusFilter === "offline" ? "selected" : ""}>Offline</option><option value="unknown" ${this.statusFilter === "unknown" ? "selected" : ""}>${this.t("unknown")}</option></select>
         <select id="ip-filter"><option value="">${this.t("allIpIssues")}</option><option value="mismatch" ${this.ipFilter === "mismatch" ? "selected" : ""}>${this.t("ipMismatch")}</option><option value="duplicate" ${this.ipFilter === "duplicate" ? "selected" : ""}>${this.t("duplicateIp")}</option></select>
+        <select id="tag-filter"><option value="">${this.t("allTags")}</option>${tagOptions}</select>
         <button class="secondary" data-action="clear-filters"><ha-icon icon="mdi:filter-off-outline"></ha-icon>${this.t("clearFilters")}</button>
       </section>
       <section class="table-card">
         <div class="table-scroll"><table><thead><tr>
-          <th>${this.t("code")}</th><th>${this.t("name")}</th><th>${this.t("type")}</th><th>${this.t("brand")}</th>
-          <th>${this.t("area")}</th><th>${this.t("address")}</th><th>${this.t("ip")}</th><th>${this.t("entityName")}</th><th>${this.t("protocol")}</th><th></th>
+          <th>${this.t("code")}</th><th>${this.t("name")}</th><th>${this.t("area")}</th>
+          <th>${this.t("address")}</th><th>${this.t("protocol")}</th><th></th>
         </tr></thead><tbody>${devices.map(d => this.deviceRow(d)).join("")}</tbody></table></div>
         ${devices.length ? "" : `<div class="empty"><ha-icon icon="mdi:devices-off"></ha-icon><p>${this.t("empty")}</p></div>`}
       </section>`;
@@ -222,12 +239,17 @@ class NetworkInventoryPanel extends HTMLElement {
     const duplicateText = duplicates.map(item => `#${item.device_code} ${item.name}`).join(", ");
     return `<tr>
       <td><span class="code">${d.device_code}</span></td>
-      <td><div class="device-name"><strong>${esc(d.name)}</strong>${unifi ? `<button class="unifi-badge" data-unifi-details="${esc(d.id)}" title="${this.t("unifiBadge")}"><ha-icon icon="mdi:access-point-network"></ha-icon>UniFi</button>` : ""}</div><small>${esc(d.model || d.integration || "")}</small></td>
-      <td>${esc(d.device_type)}</td><td>${esc(d.brand)}</td><td>${esc(d.area)}</td>
-      <td class="mono">${esc(d.mac)}</td><td class="mono ip-cell"><span>${esc(d.ip_address || "—")}</span>${mismatch ? `<small class="ip-warning">${this.t("unifiIp")}: ${esc(unifi.ip_address)} <button data-sync-ip="${esc(d.id)}" title="${this.t(d.ip_address ? "updateInventoryIp" : "addInventoryIp")}"><ha-icon icon="mdi:sync"></ha-icon></button></small>` : ""}${duplicates.length ? `<small class="duplicate-warning" title="${esc(duplicateText)}"><ha-icon icon="mdi:alert-circle-outline"></ha-icon>${this.t("sharedWith")}: ${esc(duplicateText)}</small>` : ""}</td><td class="mono">${esc(d.entity_name)}</td>
+      <td><div class="device-name"><strong>${esc(d.name)}</strong>${unifi ? `<button class="unifi-badge" data-unifi-details="${esc(d.id)}" title="${this.t("unifiBadge")}"><ha-icon icon="mdi:access-point-network"></ha-icon>UniFi</button>` : ""}</div><small>${esc([d.device_type, d.brand, d.model].filter(Boolean).join(" · "))}</small>${this.tagChips(d.tags)}</td>
+      <td><strong>${esc(d.area)}</strong><small>${esc([d.network, d.vlan ? `VLAN ${d.vlan}` : "", d.ssid].filter(Boolean).join(" · "))}</small>${d.connected_device ? `<small>${esc(d.connected_device)}${d.switch_port ? ` · ${this.t("switchPort")} ${esc(d.switch_port)}` : ""}</small>` : ""}</td>
+      <td class="mono address-cell"><span>${esc(d.mac)}</span><small>${esc(d.ip_address || "—")}</small>${mismatch ? `<small class="ip-warning">${this.t("unifiIp")}: ${esc(unifi.ip_address)} <button data-sync-ip="${esc(d.id)}" title="${this.t(d.ip_address ? "updateInventoryIp" : "addInventoryIp")}"><ha-icon icon="mdi:sync"></ha-icon></button></small>` : ""}${duplicates.length ? `<small class="duplicate-warning" title="${esc(duplicateText)}"><ha-icon icon="mdi:alert-circle-outline"></ha-icon>${this.t("sharedWith")}: ${esc(duplicateText)}</small>` : ""}</td>
       <td><span class="pill" style="--pill:${safeColor(protocol.color)}">${esc(protocol.label)}</span></td>
       <td><div class="row-actions">${this.data.integrations?.niimbot?.connected ? `<button title="${this.t("printLabel")}" data-print-label="${esc(d.id)}"><ha-icon icon="mdi:printer-outline"></ha-icon></button>` : ""}${unifi ? `<a href="https://unifi.ui.com" target="_blank" rel="noopener noreferrer" title="${this.t("openUnifi")}"><ha-icon icon="mdi:open-in-new"></ha-icon></a>` : ""}<button title="${this.t("edit")}" data-edit="${d.id}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="danger-icon" title="${this.t("delete")}" data-delete="${d.id}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div></td>
     </tr>`;
+  }
+
+  tagChips(tags = []) {
+    const visible = tags.slice(0, 3);
+    return tags.length ? `<div class="tag-list">${visible.map(tag => `<span>${esc(tag)}</span>`).join("")}${tags.length > 3 ? `<span title="${esc(tags.slice(3).join(", "))}">+${tags.length - 3}</span>` : ""}</div>` : "";
   }
 
   renderHaDevices() {
@@ -277,6 +299,19 @@ class NetworkInventoryPanel extends HTMLElement {
       }).join("")}</section>${items.length ? "" : `<div class="empty standalone"><ha-icon icon="mdi:lan-disconnect"></ha-icon><p>${this.t("noUnifi")}</p></div>`}`;
   }
 
+  renderLogs() {
+    const logs = [...(this.data.logs || [])].reverse();
+    const actionLabel = action => ({ add: this.t("addDevice"), update: this.t("edit"), delete: this.t("delete"), import: this.t("import"), restore: this.t("restore"), settings: this.t("settings") }[action] || action);
+    return `<section class="section-head"><div><h2>${this.t("logs")}</h2><p>${logs.length} ${this.t("logAction").toLowerCase()}</p></div></section>
+      <section class="log-list">${logs.map(log => `<article class="card log-entry"><div class="log-icon ${esc(log.action)}"><ha-icon icon="${log.action === "delete" ? "mdi:delete-outline" : log.action === "restore" ? "mdi:backup-restore" : "mdi:pencil-outline"}"></ha-icon></div><div class="grow"><div class="log-title"><strong>${esc(actionLabel(log.action))}</strong>${log.device_name ? `<span>#${esc(log.device_code)} · ${esc(log.device_name)}</span>` : ""}</div><small>${esc(formatDate(log.timestamp))} · ${esc(log.source || "manual")}</small>${log.details ? `<p>${esc(log.details)}</p>` : ""}<div class="change-list">${(log.changes || []).map(change => `<div><b>${esc(this.fieldLabel(change.field))}</b><span>${esc(displayValue(change.old))}</span><ha-icon icon="mdi:arrow-right"></ha-icon><span>${esc(displayValue(change.new))}</span></div>`).join("")}</div></div></article>`).join("")}</section>
+      ${logs.length ? "" : `<div class="empty standalone"><ha-icon icon="mdi:history"></ha-icon><p>${this.t("noLogs")}</p></div>`}`;
+  }
+
+  fieldLabel(fieldName) {
+    const labels = { name:"name", device_type:"type", brand:"brand", model:"model", area:"area", mac:"address", ip_address:"ip", protocol:"protocol", device_identifier:"identifier", entity_name:"entityName", comments:"comments", status:"status", network:"network", vlan:"vlan", ssid:"ssid", connected_device:"connectedDevice", switch_port:"switchPort", tags:"tags" };
+    return this.t(labels[fieldName] || fieldName);
+  }
+
   renderSettings() {
     const rows = Object.entries(this.data.protocols).map(([key, p]) => this.protocolRow(key, p)).join("");
     return `<form id="settings-form">
@@ -285,8 +320,12 @@ class NetworkInventoryPanel extends HTMLElement {
       </section>
       <section class="card settings-card"><h2>${this.t("deviceTypes")}</h2><textarea id="device-types" rows="12">${esc(this.data.device_types.join("\n"))}</textarea></section>
       <section class="card settings-card"><h2>${this.t("brandSettings")}</h2><textarea id="brands" rows="8">${esc(this.data.brands.join("\n"))}</textarea></section>
+      <section class="card settings-card"><h2>${this.t("tagSettings")}</h2><textarea id="tags" rows="8">${esc((this.data.tags || []).join("\n"))}</textarea></section>
       <div class="form-actions"><button type="submit" class="primary"><ha-icon icon="mdi:content-save-outline"></ha-icon>${this.t("saveSettings")}</button></div>
-    </form>`;
+    </form>
+    <section class="card settings-card backup-card"><div class="section-head"><div><h2>${this.t("backups")}</h2><p>${this.t("automaticBackups")}</p></div><div class="backup-actions"><input id="json-file" type="file" accept="application/json,.json" hidden><button class="secondary" data-action="restore-json"><ha-icon icon="mdi:backup-restore"></ha-icon>${this.t("restoreJson")}</button><button class="secondary" data-action="export-json"><ha-icon icon="mdi:download"></ha-icon>${this.t("exportJson")}</button></div></div>
+      <div class="backup-list">${(this.data.backups || []).map(backup => `<div><span><strong>${esc(formatDate(backup.created_at))}</strong><small>${esc(backup.reason)} · ${esc(backup.device_count)} ${this.t("devices").toLowerCase()}</small></span><button class="secondary compact" data-restore-backup="${esc(backup.id)}">${this.t("restore")}</button></div>`).join("") || `<p class="muted">${this.t("automaticBackups")}: 0</p>`}</div>
+    </section>`;
   }
 
   protocolRow(key = "", p = { label: "", start: "", end: "", color: "#64748b" }) {
@@ -310,11 +349,11 @@ class NetworkInventoryPanel extends HTMLElement {
     }));
     this.shadowRoot.querySelectorAll("[data-delete]").forEach(button => button.addEventListener("click", () => this.deleteDevice(button.dataset.delete)));
     this.shadowRoot.querySelector("#search")?.addEventListener("input", event => { this.query = event.target.value; this.refreshDeviceBody(); });
-    [["protocol", "protocolFilter"], ["type", "typeFilter"], ["brand", "brandFilter"], ["area", "areaFilter"], ["status", "statusFilter"], ["ip", "ipFilter"]].forEach(([id, property]) => {
+    [["protocol", "protocolFilter"], ["type", "typeFilter"], ["brand", "brandFilter"], ["area", "areaFilter"], ["status", "statusFilter"], ["ip", "ipFilter"], ["tag", "tagFilter"]].forEach(([id, property]) => {
       this.shadowRoot.querySelector(`#${id}-filter`)?.addEventListener("change", event => { this[property] = event.target.value; this.render(); });
     });
     this.shadowRoot.querySelector("[data-action='clear-filters']")?.addEventListener("click", () => {
-      this.protocolFilter = this.typeFilter = this.brandFilter = this.areaFilter = this.statusFilter = this.ipFilter = "";
+      this.protocolFilter = this.typeFilter = this.brandFilter = this.areaFilter = this.statusFilter = this.ipFilter = this.tagFilter = "";
       this.query = "";
       this.render();
     });
@@ -335,6 +374,10 @@ class NetworkInventoryPanel extends HTMLElement {
     this.shadowRoot.querySelector("[data-action='add-protocol']")?.addEventListener("click", () => this.addProtocolRow());
     this.shadowRoot.querySelectorAll("[data-remove-protocol]").forEach(button => button.addEventListener("click", () => button.closest(".protocol-setting").remove()));
     this.shadowRoot.querySelector("#settings-form")?.addEventListener("submit", event => this.saveSettings(event));
+    this.shadowRoot.querySelector("[data-action='export-json']")?.addEventListener("click", () => this.exportJson());
+    this.shadowRoot.querySelector("[data-action='restore-json']")?.addEventListener("click", () => this.shadowRoot.querySelector("#json-file").click());
+    this.shadowRoot.querySelector("#json-file")?.addEventListener("change", event => this.restoreJson(event.target.files[0]));
+    this.shadowRoot.querySelectorAll("[data-restore-backup]").forEach(button => button.addEventListener("click", () => this.restoreInternalBackup(button.dataset.restoreBackup)));
   }
 
   refreshDeviceBody() {
@@ -359,7 +402,13 @@ class NetworkInventoryPanel extends HTMLElement {
       comments: item.uplink_name ? `${this.t("uplink")}: ${item.uplink_name}` : "",
       unifi_id: item.id,
       unifi_kind: item.kind,
-      unifi_site_id: this.data.integrations?.unifi?.site_id || ""
+      unifi_site_id: this.data.integrations?.unifi?.site_id || "",
+      network: item.network || "",
+      vlan: item.vlan || "",
+      ssid: item.ssid || "",
+      connected_device: item.connected_device || item.uplink_name || "",
+      switch_port: item.switch_port || "",
+      tags: []
     };
   }
 
@@ -440,6 +489,7 @@ class NetworkInventoryPanel extends HTMLElement {
       [this.t("name"), item.name], [this.t("address"), item.mac], [this.t("unifiIp"), item.ip_address],
       ...(inventory ? [[this.t("inventoryIp"), inventory.ip_address || "—"]] : []),
       [this.t("type"), item.connection_type], [this.t("model"), item.model], [this.t("firmware"), item.firmware_version],
+      [this.t("network"), item.network], [this.t("vlan"), item.vlan], [this.t("ssid"), item.ssid], [this.t("switchPort"), item.switch_port],
       [this.t("uplink"), [item.uplink_name, item.uplink_model, item.uplink_ip].filter(Boolean).join(" · ")],
       [this.t("connectedSince"), formatDate(item.connected_at)], [this.t("lastRefresh"), formatDate(refreshed)]
     ].filter(([, value]) => value);
@@ -481,6 +531,7 @@ class NetworkInventoryPanel extends HTMLElement {
       (!this.brandFilter || device.brand === this.brandFilter) &&
       (!this.areaFilter || device.area === this.areaFilter) &&
       (!this.statusFilter || device.status === this.statusFilter) &&
+      (!this.tagFilter || (device.tags || []).includes(this.tagFilter)) &&
       (!this.ipFilter || (this.ipFilter === "mismatch" && this.hasIpMismatch(device)) || (this.ipFilter === "duplicate" && this.devicesWithIp(device.ip_address).length > 1)) &&
       (!q || Object.values(device).join(" ").toLowerCase().includes(q))
     ).sort((a,b) => a.device_code-b.device_code);
@@ -493,6 +544,8 @@ class NetworkInventoryPanel extends HTMLElement {
     if (device?.brand && !brands.some(brand => brand.toLowerCase() === device.brand.toLowerCase())) brands.push(device.brand);
     const brandOptions = brands.sort((a,b) => a.localeCompare(b)).map(brand => `<option value="${esc(brand)}" ${device?.brand === brand ? "selected" : ""}>${esc(brand)}</option>`).join("");
     const areaOptions = this.data.areas.map(area => `<option value="${esc(area)}"></option>`).join("");
+    const selectedTags = new Set(device?.tags || []);
+    const tagOptions = (this.data.tags || []).map(tag => `<label><input type="checkbox" name="tags" value="${esc(tag)}" ${selectedTags.has(tag) ? "checked" : ""}>${esc(tag)}</label>`).join("");
     const isEdit = Boolean(device && !isImport);
     const ipRequired = ["wifi", "ethernet"].includes(device?.protocol || "wifi");
     const modal = this.shadowRoot.querySelector("#modal");
@@ -508,6 +561,8 @@ class NetworkInventoryPanel extends HTMLElement {
         ${field("device_identifier", this.t("identifier"), device?.device_identifier)}${field("entity_name", this.t("entityName"), device?.entity_name)}
         ${field("integration", this.t("integration"), device?.integration)}
         <label>${this.t("status")}<select name="status"><option value="unknown">${this.t("unknown")}</option><option value="online" ${device?.status === "online" ? "selected" : ""}>Online</option><option value="offline" ${device?.status === "offline" ? "selected" : ""}>Offline</option></select></label>
+        <fieldset class="full network-fields"><legend>${this.t("networkDetails")}</legend>${field("network", this.t("network"), device?.network)}${field("vlan", this.t("vlan"), device?.vlan)}${field("ssid", this.t("ssid"), device?.ssid)}${field("connected_device", this.t("connectedDevice"), device?.connected_device)}${field("switch_port", this.t("switchPort"), device?.switch_port)}</fieldset>
+        <label class="full">${this.t("tags")}<details class="tag-picker"><summary>${selectedTags.size ? esc([...selectedTags].join(", ")) : this.t("tags")}</summary><div>${tagOptions || `<small>${this.t("tagSettings")}</small>`}</div></details></label>
         <label class="full">${this.t("comments")}<textarea name="comments" rows="3">${esc(device?.comments || "")}</textarea></label>
       </div><div class="modal-actions"><button type="button" class="secondary" data-close>${this.t("cancel")}</button><button type="submit" class="primary">${this.t("save")}</button></div></form></section></div>`;
     modal.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", () => modal.innerHTML = ""));
@@ -525,6 +580,7 @@ class NetworkInventoryPanel extends HTMLElement {
     event.preventDefault();
     const form = event.currentTarget;
     const payload = Object.fromEntries(new FormData(form).entries());
+    payload.tags = [...form.querySelectorAll("[name='tags']:checked")].map(input => input.value);
     if (!payload.name.trim()) return this.toast(this.t("requiredName"), true);
     this.setBusy(form, true);
     try {
@@ -551,14 +607,14 @@ class NetworkInventoryPanel extends HTMLElement {
     try {
       const rows = csvToDevices(await file.text());
       const result = await this._hass.callWS({ type: "network_inventory/import", devices: rows });
-      await this.reload(`${result.imported} ${this.t("imported")}, ${result.skipped} ${this.t("skipped")}`);
+      await this.reload(`${result.imported} ${this.t("imported")}, ${result.skipped} ${this.t("skipped")}${result.backup_id ? ` · ${this.t("backupBeforeImport")}` : ""}`);
     } catch (error) { this.toast(error?.message || this.t("error"), true); }
   }
 
   exportCsv() {
-    const headers = ["Device Code","MAC / IEEE Address","Device IP","Device Type","Brand","Area","Device Name","Device ID","Entity Name","Comments","Protocol"];
-    const keys = ["device_code","mac","ip_address","device_type","brand","area","name","device_identifier","entity_name","comments","protocol"];
-    const lines = [headers, ...this.data.devices.sort((a,b) => a.device_code-b.device_code).map(d => keys.map(k => d[k] ?? ""))];
+    const headers = ["Device Code","MAC / IEEE Address","Device IP","Device Type","Brand","Area","Device Name","Device ID","Entity Name","Comments","Protocol","Network","VLAN","SSID","AP / Switch","Switch Port","Tags"];
+    const keys = ["device_code","mac","ip_address","device_type","brand","area","name","device_identifier","entity_name","comments","protocol","network","vlan","ssid","connected_device","switch_port","tags"];
+    const lines = [headers, ...this.data.devices.sort((a,b) => a.device_code-b.device_code).map(d => keys.map(k => Array.isArray(d[k]) ? d[k].join(";") : (d[k] ?? "")))];
     const csv = lines.map(row => row.map(csvCell).join(",")).join("\r\n");
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" }));
@@ -581,8 +637,36 @@ class NetworkInventoryPanel extends HTMLElement {
     });
     const device_types = this.shadowRoot.querySelector("#device-types").value.split("\n").map(v => v.trim()).filter(Boolean);
     const brands = this.shadowRoot.querySelector("#brands").value.split("\n").map(v => v.trim()).filter(Boolean);
-    try { await this._hass.callWS({ type: "network_inventory/settings", settings: { protocols, device_types, brands } }); await this.reload(this.t("saved")); }
+    const tags = this.shadowRoot.querySelector("#tags").value.split("\n").map(v => v.trim()).filter(Boolean);
+    try { await this._hass.callWS({ type: "network_inventory/settings", settings: { protocols, device_types, brands, tags } }); await this.reload(this.t("saved")); }
     catch (error) { this.toast(error?.message || this.t("error"), true); }
+  }
+
+  async exportJson() {
+    try {
+      const backup = await this._hass.callWS({ type: "network_inventory/export" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }));
+      link.download = `network-inventory-backup-${new Date().toISOString().slice(0,10)}.json`;
+      link.click(); URL.revokeObjectURL(link.href);
+    } catch (error) { this.toast(error?.message || this.t("error"), true); }
+  }
+
+  async restoreJson(file) {
+    if (!file || !confirm(this.t("confirmRestore"))) return;
+    try {
+      const backup = JSON.parse(await file.text());
+      await this._hass.callWS({ type: "network_inventory/restore", backup });
+      await this.reload(this.t("restored"));
+    } catch (error) { this.toast(error?.message || this.t("error"), true); }
+  }
+
+  async restoreInternalBackup(backupId) {
+    if (!confirm(this.t("confirmRestore"))) return;
+    try {
+      await this._hass.callWS({ type: "network_inventory/restore_backup", backup_id: backupId });
+      await this.reload(this.t("restored"));
+    } catch (error) { this.toast(error?.message || this.t("error"), true); }
   }
 
   async reload(message) {
@@ -610,6 +694,7 @@ function esc(value) {
 
 function safeColor(value) { return /^#[0-9a-f]{6}$/i.test(value || "") ? value : "#64748b"; }
 function formatDate(value) { if (!value) return ""; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString(); }
+function displayValue(value) { if (Array.isArray(value)) return value.join(", ") || "—"; if (value && typeof value === "object") return JSON.stringify(value); return String(value ?? "") || "—"; }
 function csvCell(value) { const text = String(value ?? ""); return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; }
 function wrapForm(node) { const form = document.createElement("form"); [...node.querySelectorAll("input,select,textarea")].forEach(el => form.append(el.cloneNode(true))); return form; }
 
@@ -640,10 +725,16 @@ function csvToDevices(text) {
     ip_address: find("deviceip", "ipaddress", "ip"), device_type: find("devicetype", "type"), brand: find("brand", "manufacturer"),
     area: find("area", "room"), name: find("devicename", "name"), device_identifier: find("deviceid", "identifier"),
     entity_name: find("entityname"),
-    comments: find("comments", "notes"), protocol: find("protocol", "connection", "network")
+    comments: find("comments", "notes"), protocol: find("protocol", "connection"),
+    network: find("network", "networkname"), vlan: find("vlan", "vlanid"), ssid: find("ssid"),
+    connected_device: find("apswitch", "connecteddevice", "uplink"), switch_port: find("switchport", "port"), tags: find("tags")
   };
-  if (index.protocol < 0 && rows[0].length >= 10) index.protocol = rows[0].length - 1;
-  return rows.slice(1).map(row => Object.fromEntries(Object.entries(index).map(([key, i]) => [key, i >= 0 ? (row[i] || "").trim() : ""]))).filter(item => item.name);
+  if (index.protocol < 0 && rows[0].length >= 10 && rows[0].length <= 11) index.protocol = rows[0].length - 1;
+  return rows.slice(1).map(row => {
+    const item = Object.fromEntries(Object.entries(index).map(([key, i]) => [key, i >= 0 ? (row[i] || "").trim() : ""]));
+    item.tags = item.tags ? item.tags.split(";").map(tag => tag.trim()).filter(Boolean) : [];
+    return item;
+  }).filter(item => item.name);
 }
 
 const BASE_CSS = `
@@ -654,13 +745,13 @@ const BASE_CSS = `
   button{border:0;background:none}.primary,.secondary{height:42px;border-radius:10px;padding:0 15px;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:650;white-space:nowrap}.primary{background:var(--primary-color);color:#fff}.secondary{border:1px solid var(--divider-color);background:var(--card-background-color)}.compact{height:36px;padding:0 12px;font-size:13px}button:disabled{opacity:.55;cursor:wait}
   nav{display:flex;gap:5px;border-bottom:1px solid var(--divider-color);margin-bottom:24px;overflow:auto}.nav{padding:12px 15px;display:flex;align-items:center;gap:8px;color:var(--secondary-text-color);border-bottom:2px solid transparent;white-space:nowrap}.nav.active{color:var(--primary-color);border-color:var(--primary-color);font-weight:650}.nav b{font-size:11px;background:var(--primary-color);color:#fff;border-radius:20px;padding:2px 6px}
   .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}.stat,.card,.table-card,.import-card{background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:14px}.stat{padding:18px;display:flex;align-items:center;gap:14px}.stat-icon{width:44px;height:44px;border-radius:12px;display:grid;place-items:center}.stat-icon.blue{background:#dbeafe;color:#2563eb}.stat-icon.green{background:#d1fae5;color:#059669}.stat-icon.orange{background:#ffedd5;color:#ea580c}.stat-icon.purple{background:#ede9fe;color:#7c3aed}.stat span{display:block;font-size:12px;color:var(--secondary-text-color);margin-bottom:3px}.stat strong{font-size:24px}.grid-two{display:grid;grid-template-columns:1fr 1.3fr;gap:16px}.card{padding:20px}.protocol-list>div{display:grid;grid-template-columns:10px 90px 1fr 28px;align-items:center;gap:9px;margin:14px 0;font-size:13px}.dot{width:9px;height:9px;border-radius:50%}.bar{height:7px;background:var(--divider-color);border-radius:10px;overflow:hidden}.bar i{display:block;height:100%;border-radius:10px}.mini-list button{width:100%;display:grid;grid-template-columns:58px 1fr 24px;align-items:center;text-align:left;padding:10px 5px;border-bottom:1px solid var(--divider-color)}.mini-list button:last-child{border:0}.mini-list small,td small{display:block;color:var(--secondary-text-color);margin-top:3px}.code{font-family:ui-monospace,monospace;font-weight:750;color:var(--primary-color)}
-  .toolbar{display:flex;gap:10px;margin-bottom:10px;padding:12px}.filters{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr)) auto;gap:10px;margin-bottom:14px;padding:12px}.search{flex:1;min-width:190px;display:flex;align-items:center;gap:8px;border:1px solid var(--divider-color);border-radius:9px;padding:0 11px}.search input{border:0;background:transparent;width:100%;outline:0;height:40px}select,input,textarea{border:1px solid var(--divider-color);background:var(--card-background-color);border-radius:8px;padding:10px;outline:none}select:focus,input:focus,textarea:focus{border-color:var(--primary-color);box-shadow:0 0 0 2px color-mix(in srgb,var(--primary-color) 18%,transparent)}.table-card{overflow:hidden}.table-scroll{overflow:auto}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;color:var(--secondary-text-color);font-size:11px;text-transform:uppercase;letter-spacing:.35px;background:var(--secondary-background-color);padding:12px}td{padding:12px;border-top:1px solid var(--divider-color);white-space:nowrap}.mono{font-family:ui-monospace,monospace;font-size:12px}.pill{display:inline-flex;border-radius:20px;padding:4px 9px;background:color-mix(in srgb,var(--pill) 14%,transparent);color:var(--pill);font-size:12px;font-weight:650}.row-actions{display:flex}.row-actions button,.row-actions a,.modal-head button,.danger-icon{width:36px;height:36px;border-radius:8px;display:grid;place-items:center;color:inherit;text-decoration:none}.row-actions button:hover,.row-actions a:hover,.modal-head button:hover{background:var(--secondary-background-color)}.danger-icon{color:var(--error-color,#dc2626)}.ip-cell{white-space:normal;min-width:175px}.ip-cell>span{white-space:nowrap}.ip-warning,.duplicate-warning{display:flex;align-items:center;gap:4px;margin-top:5px;font-family:system-ui,sans-serif;font-size:10px;color:#b45309;white-space:normal}.duplicate-warning{color:var(--error-color,#c62828);max-width:280px}.ip-warning button{display:grid;place-items:center;width:24px;height:24px;border-radius:6px;color:inherit}.ip-warning button:hover{background:#fef3c7}.ip-warning ha-icon,.duplicate-warning ha-icon{--mdc-icon-size:14px;flex:0 0 auto}
+  .toolbar{display:flex;gap:10px;margin-bottom:10px;padding:12px}.filters{display:grid;grid-template-columns:repeat(7,minmax(110px,1fr)) auto;gap:10px;margin-bottom:14px;padding:12px}.search{flex:1;min-width:190px;display:flex;align-items:center;gap:8px;border:1px solid var(--divider-color);border-radius:9px;padding:0 11px}.search input{border:0;background:transparent;width:100%;outline:0;height:40px}select,input,textarea{border:1px solid var(--divider-color);background:var(--card-background-color);border-radius:8px;padding:10px;outline:none}select:focus,input:focus,textarea:focus{border-color:var(--primary-color);box-shadow:0 0 0 2px color-mix(in srgb,var(--primary-color) 18%,transparent)}.table-card{overflow:hidden}.table-scroll{overflow:visible}table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:13px}th{text-align:left;color:var(--secondary-text-color);font-size:11px;text-transform:uppercase;letter-spacing:.35px;background:var(--secondary-background-color);padding:12px}th:nth-child(1){width:72px}th:nth-child(2){width:25%}th:nth-child(3){width:22%}th:nth-child(4){width:27%}th:nth-child(5){width:110px}th:nth-child(6){width:150px}td{padding:12px;border-top:1px solid var(--divider-color);overflow-wrap:anywhere;vertical-align:top}.mono{font-family:ui-monospace,monospace;font-size:12px}.pill{display:inline-flex;border-radius:20px;padding:4px 9px;background:color-mix(in srgb,var(--pill) 14%,transparent);color:var(--pill);font-size:12px;font-weight:650}.row-actions{display:flex;justify-content:flex-end}.row-actions button,.row-actions a,.modal-head button,.danger-icon{width:36px;height:36px;border-radius:8px;display:grid;place-items:center;color:inherit;text-decoration:none}.row-actions button:hover,.row-actions a:hover,.modal-head button:hover{background:var(--secondary-background-color)}.danger-icon{color:var(--error-color,#dc2626)}.address-cell>span{white-space:normal}.ip-warning,.duplicate-warning{display:flex;align-items:center;gap:4px;margin-top:5px;font-family:system-ui,sans-serif;font-size:10px;color:#b45309;white-space:normal}.duplicate-warning{color:var(--error-color,#c62828);max-width:280px}.ip-warning button{display:grid;place-items:center;width:24px;height:24px;border-radius:6px;color:inherit}.ip-warning button:hover{background:#fef3c7}.ip-warning ha-icon,.duplicate-warning ha-icon{--mdc-icon-size:14px;flex:0 0 auto}.tag-list{display:flex;gap:4px;flex-wrap:wrap;margin-top:7px}.tag-list span{font:650 10px system-ui,sans-serif;padding:3px 6px;border-radius:10px;background:var(--secondary-background-color);color:var(--secondary-text-color)}
   .section-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}.section-head h2{margin:0 0 4px}.import-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.import-card{padding:15px;display:flex;align-items:center;gap:13px}.card-actions{display:flex;flex-direction:column;gap:7px;align-items:stretch}.card-actions a{text-decoration:none}.device-icon{width:42px;height:42px;border-radius:11px;background:var(--secondary-background-color);display:grid;place-items:center;color:var(--primary-color)}.unifi-icon{background:#e0f2fe;color:#0284c7}.grow{flex:1;min-width:0}.import-card p{font-size:12px;color:var(--secondary-text-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.meta{display:flex;gap:7px;margin-top:8px;align-items:center;flex-wrap:wrap}.meta>span:not(.pill){font-size:11px;color:var(--secondary-text-color)}.empty{padding:50px;text-align:center;color:var(--secondary-text-color)}.empty ha-icon{--mdc-icon-size:42px;margin-bottom:10px}.standalone{background:var(--card-background-color);border-radius:14px}
   .device-name{display:flex;align-items:center;gap:7px}.unifi-badge{display:inline-flex;align-items:center;gap:3px;border-radius:20px;padding:3px 7px;background:#e0f2fe;color:#0369a1;font-size:10px;font-weight:750}.unifi-badge ha-icon{--mdc-icon-size:13px}.integration-card{display:flex;align-items:flex-start;gap:16px}.integration-logo{width:54px;height:54px;flex:0 0 54px;border-radius:14px;background:#e0f2fe;color:#0284c7;display:grid;place-items:center}.integration-logo ha-icon{--mdc-icon-size:30px}.integration-title{display:flex;align-items:center;gap:10px}.integration-title h2{margin:0}.status-dot{font-size:11px;font-weight:700;padding:4px 8px;border-radius:20px;background:var(--secondary-background-color);color:var(--secondary-text-color)}.status-dot.ok{background:#d1fae5;color:#047857}.inline-form{display:flex;align-items:end;gap:10px;margin:16px 0 8px}.inline-form label{display:grid;gap:6px;flex:1;max-width:520px;font-size:12px;color:var(--secondary-text-color)}.inline-form input,.inline-form select{width:100%}.doc-link{display:inline-flex;align-items:center;gap:5px;color:var(--primary-color);font-size:12px;margin-top:12px;text-decoration:none}.doc-link ha-icon{--mdc-icon-size:14px}.integration-actions{display:flex;gap:8px}.danger-text{color:var(--error-color,#c62828)}.inline-error{color:var(--error-color,#c62828);font-size:12px;margin-top:8px}.details-modal{width:min(600px,100%)}.detail-list{padding:8px 20px 22px}.detail-list>div{display:grid;grid-template-columns:150px 1fr;gap:15px;padding:12px 0;border-bottom:1px solid var(--divider-color)}.detail-list span{font-size:12px;color:var(--secondary-text-color)}.detail-list strong{font-size:13px;overflow-wrap:anywhere}
-  .settings-card{margin-bottom:14px}.protocol-settings{display:grid;gap:10px}.protocol-setting{display:grid;grid-template-columns:1fr 1.3fr .7fr .7fr .55fr 40px;gap:10px;align-items:end;padding:12px;border:1px solid var(--divider-color);border-radius:10px}.protocol-setting label,.form-grid label{font-size:12px;color:var(--secondary-text-color);display:grid;gap:6px}.protocol-setting input{width:100%}.protocol-setting input[type=color]{height:41px;padding:5px}.settings-card textarea{width:100%;resize:vertical}.form-actions{display:flex;justify-content:flex-end}
-  .modal-backdrop{position:fixed;z-index:20;inset:0;background:#0008;display:grid;place-items:center;padding:18px}.modal{width:min(760px,100%);max-height:92vh;overflow:auto;background:var(--card-background-color);border-radius:16px;box-shadow:0 20px 70px #0006}.modal-head{padding:19px 21px;border-bottom:1px solid var(--divider-color);display:flex;justify-content:space-between}.modal-head h2{margin:0 0 4px}.modal-head p{font-size:12px;color:var(--secondary-text-color)}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:20px}.form-grid input,.form-grid select,.form-grid textarea{width:100%}.form-grid .full{grid-column:1/-1}.form-grid small{min-height:13px}.id-field{display:grid;grid-template-columns:1fr 42px;gap:7px}.id-field button{width:42px;padding:0}.modal-actions{padding:15px 20px;border-top:1px solid var(--divider-color);display:flex;justify-content:flex-end;gap:9px}#toast{position:fixed;z-index:30;left:50%;bottom:30px;transform:translate(-50%,30px);background:#17202a;color:#fff;padding:11px 16px;border-radius:9px;opacity:0;pointer-events:none;transition:.2s}#toast.show{opacity:1;transform:translate(-50%,0)}#toast.error{background:var(--error-color,#c62828)}.state{min-height:70vh;display:flex;align-items:center;justify-content:center;gap:12px;color:var(--secondary-text-color)}.spinner{width:22px;height:22px;border:3px solid var(--divider-color);border-top-color:var(--primary-color);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+  .settings-card{margin-bottom:14px}.protocol-settings{display:grid;gap:10px}.protocol-setting{display:grid;grid-template-columns:1fr 1.3fr .7fr .7fr .55fr 40px;gap:10px;align-items:end;padding:12px;border:1px solid var(--divider-color);border-radius:10px}.protocol-setting label,.form-grid label{font-size:12px;color:var(--secondary-text-color);display:grid;gap:6px}.protocol-setting input{width:100%}.protocol-setting input[type=color]{height:41px;padding:5px}.settings-card textarea{width:100%;resize:vertical}.form-actions{display:flex;justify-content:flex-end;margin-bottom:14px}.backup-actions{display:flex;gap:8px}.backup-list>div{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-top:1px solid var(--divider-color)}.backup-list small{display:block;color:var(--secondary-text-color);margin-top:3px}.log-list{display:grid;gap:10px}.log-entry{display:flex;gap:13px;padding:15px}.log-icon{width:38px;height:38px;flex:0 0 38px;border-radius:10px;background:#dbeafe;color:#2563eb;display:grid;place-items:center}.log-icon.delete{background:#fee2e2;color:#dc2626}.log-icon.restore{background:#ede9fe;color:#7c3aed}.log-title{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.log-title span,.log-entry small{font-size:11px;color:var(--secondary-text-color)}.log-entry p{font-size:12px;margin-top:7px}.change-list{margin-top:9px}.change-list>div{display:grid;grid-template-columns:130px minmax(0,1fr) 20px minmax(0,1fr);gap:7px;align-items:center;padding:5px 0;font-size:11px}.change-list b{font-weight:650}.change-list span{overflow-wrap:anywhere}.change-list ha-icon{--mdc-icon-size:14px;color:var(--secondary-text-color)}
+  .modal-backdrop{position:fixed;z-index:20;inset:0;background:#0008;display:grid;place-items:center;padding:18px}.modal{width:min(760px,100%);max-height:92vh;overflow:auto;background:var(--card-background-color);border-radius:16px;box-shadow:0 20px 70px #0006}.modal-head{padding:19px 21px;border-bottom:1px solid var(--divider-color);display:flex;justify-content:space-between}.modal-head h2{margin:0 0 4px}.modal-head p{font-size:12px;color:var(--secondary-text-color)}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:20px}.form-grid input,.form-grid select,.form-grid textarea{width:100%}.form-grid .full{grid-column:1/-1}.form-grid small{min-height:13px}.network-fields{grid-column:1/-1;border:1px solid var(--divider-color);border-radius:10px;padding:12px;display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.network-fields legend{font-size:12px;color:var(--secondary-text-color);padding:0 5px}.network-fields label:last-child{grid-column:1/-1}.tag-picker{position:relative}.tag-picker summary{list-style:none;border:1px solid var(--divider-color);border-radius:8px;padding:10px;min-height:41px;color:var(--primary-text-color);cursor:pointer}.tag-picker summary::-webkit-details-marker{display:none}.tag-picker[open]>div{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px;margin-top:4px;border:1px solid var(--divider-color);border-radius:8px;background:var(--card-background-color)}.tag-picker label{display:flex;align-items:center;gap:6px;color:var(--primary-text-color)}.tag-picker input{width:auto}.id-field{display:grid;grid-template-columns:1fr 42px;gap:7px}.id-field button{width:42px;padding:0}.modal-actions{padding:15px 20px;border-top:1px solid var(--divider-color);display:flex;justify-content:flex-end;gap:9px}#toast{position:fixed;z-index:30;left:50%;bottom:30px;transform:translate(-50%,30px);background:#17202a;color:#fff;padding:11px 16px;border-radius:9px;opacity:0;pointer-events:none;transition:.2s}#toast.show{opacity:1;transform:translate(-50%,0)}#toast.error{background:var(--error-color,#c62828)}.state{min-height:70vh;display:flex;align-items:center;justify-content:center;gap:12px;color:var(--secondary-text-color)}.spinner{width:22px;height:22px;border:3px solid var(--divider-color);border-top-color:var(--primary-color);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
   @media(max-width:900px){.stats{grid-template-columns:repeat(2,1fr)}.grid-two,.import-grid{grid-template-columns:1fr}.toolbar{flex-wrap:wrap}.search{flex-basis:100%}.filters{grid-template-columns:repeat(2,minmax(0,1fr))}.protocol-setting{grid-template-columns:1fr 1fr 1fr}.protocol-setting .danger-icon{align-self:end}.app{padding:18px 14px 50px}.integration-card{flex-wrap:wrap}.integration-actions{width:100%;justify-content:flex-end}}
-  @media(max-width:600px){header{align-items:flex-start}header h1{font-size:22px}header .primary{font-size:0;width:42px;padding:0}header .primary ha-icon{font-size:initial}.stats{gap:9px}.stat{padding:13px;gap:10px}.stat-icon{width:38px;height:38px}.stat strong{font-size:20px}.nav{padding:11px 12px}.nav span{font-size:12px}.toolbar .secondary{flex:1;font-size:12px;padding:0 8px}.filters{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.form-grid .full{grid-column:auto}.protocol-setting{grid-template-columns:1fr 1fr}.import-card{align-items:flex-start}.import-card .primary{align-self:center}.section-head{align-items:flex-start}.section-head .secondary{font-size:0;width:42px;padding:0}.section-head .secondary ha-icon{font-size:initial}.inline-form{align-items:stretch;flex-direction:column}.inline-form button{width:100%}.detail-list>div{grid-template-columns:1fr;gap:4px}}
+  @media(max-width:600px){header{align-items:flex-start}header h1{font-size:22px}header .primary{font-size:0;width:42px;padding:0}header .primary ha-icon{font-size:initial}.stats{gap:9px}.stat{padding:13px;gap:10px}.stat-icon{width:38px;height:38px}.stat strong{font-size:20px}.nav{padding:11px 12px}.nav span{font-size:12px}.toolbar .secondary{flex:1;font-size:12px;padding:0 8px}.filters{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.form-grid .full,.network-fields,.network-fields label:last-child{grid-column:auto}.network-fields{grid-template-columns:1fr}.tag-picker[open]>div{grid-template-columns:repeat(2,1fr)}.protocol-setting{grid-template-columns:1fr 1fr}.import-card{align-items:flex-start}.import-card .primary{align-self:center}.section-head{align-items:flex-start}.section-head .secondary{font-size:0;width:42px;padding:0}.section-head .secondary ha-icon{font-size:initial}.inline-form{align-items:stretch;flex-direction:column}.inline-form button{width:100%}.detail-list>div{grid-template-columns:1fr;gap:4px}.backup-actions{flex-wrap:wrap;justify-content:flex-end}.change-list>div{grid-template-columns:1fr}.change-list ha-icon{transform:rotate(90deg)}table,thead,tbody,tr,th,td{display:block}thead{display:none}tbody{display:grid;gap:10px;padding:10px}tr{border:1px solid var(--divider-color);border-radius:10px;padding:10px}td{border:0;padding:6px}td:first-child{float:right}.row-actions{justify-content:flex-start}}
 `;
 
 customElements.define("network-inventory-panel", NetworkInventoryPanel);

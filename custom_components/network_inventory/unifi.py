@@ -31,6 +31,20 @@ def normalize_mac(value: Any) -> str:
     return cleaned if len(cleaned) >= 12 else ""
 
 
+def _first_value(data: dict[str, Any], *paths: str) -> str:
+    """Return the first non-empty value from alternate UniFi response paths."""
+    for path in paths:
+        value: Any = data
+        for part in path.split("."):
+            if not isinstance(value, dict):
+                value = None
+                break
+            value = value.get(part)
+        if value not in (None, ""):
+            return str(value)
+    return ""
+
+
 def match_unifi_items(
     inventory: list[dict[str, Any]], items: list[dict[str, Any]]
 ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
@@ -211,7 +225,7 @@ class UniFiCloudManager:
 
         uplinks = {str(item.get("id")): item for item in devices}
         items = [self._client_item(item, uplinks) for item in clients]
-        items.extend(self._device_item(item) for item in devices)
+        items.extend(self._device_item(item, uplinks) for item in devices)
         items.sort(key=lambda item: (item["kind"] != "client", item["name"].casefold()))
         self.items = items
         self.last_error = ""
@@ -326,6 +340,14 @@ class UniFiCloudManager:
     ) -> dict[str, Any]:
         connection = str(client.get("type") or "").upper()
         uplink = uplinks.get(str(client.get("uplinkDeviceId") or ""), {})
+        network = _first_value(client, "networkName", "network.name", "networkId")
+        vlan = _first_value(client, "vlanId", "vlan", "network.vlanId")
+        ssid = _first_value(client, "ssid", "wifi.ssid") if connection == "WIRELESS" else ""
+        switch_port = (
+            ""
+            if connection == "WIRELESS"
+            else _first_value(client, "uplinkDevicePort", "uplinkPort", "port", "wired.port")
+        )
         return {
             "id": str(client.get("id") or ""),
             "kind": "client",
@@ -339,6 +361,11 @@ class UniFiCloudManager:
             "uplink_name": str(uplink.get("name") or ""),
             "uplink_model": str(uplink.get("model") or ""),
             "uplink_ip": str(uplink.get("ipAddress") or ""),
+            "network": network,
+            "vlan": vlan,
+            "ssid": ssid,
+            "connected_device": str(uplink.get("name") or ""),
+            "switch_port": switch_port,
             "device_type": "Computer",
             "brand": "",
             "model": "",
@@ -346,7 +373,9 @@ class UniFiCloudManager:
         }
 
     @staticmethod
-    def _device_item(device: dict[str, Any]) -> dict[str, Any]:
+    def _device_item(
+        device: dict[str, Any], uplinks: dict[str, dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
         features = set(device.get("features") or [])
         if "accessPoint" in features:
             device_type = "Access Point"
@@ -356,6 +385,7 @@ class UniFiCloudManager:
             device_type = "Switch"
         else:
             device_type = "Other"
+        uplink = (uplinks or {}).get(str(device.get("uplinkDeviceId") or ""), {})
         return {
             "id": str(device.get("id") or ""),
             "kind": "infrastructure",
@@ -365,10 +395,15 @@ class UniFiCloudManager:
             "protocol": "ethernet",
             "connection_type": "UniFi infrastructure",
             "connected_at": "",
-            "uplink_id": "",
-            "uplink_name": "",
-            "uplink_model": "",
-            "uplink_ip": "",
+            "uplink_id": str(device.get("uplinkDeviceId") or ""),
+            "uplink_name": str(uplink.get("name") or ""),
+            "uplink_model": str(uplink.get("model") or ""),
+            "uplink_ip": str(uplink.get("ipAddress") or ""),
+            "network": _first_value(device, "networkName", "network.name", "networkId"),
+            "vlan": _first_value(device, "vlanId", "vlan", "network.vlanId"),
+            "ssid": "",
+            "connected_device": str(uplink.get("name") or ""),
+            "switch_port": _first_value(device, "uplinkDevicePort", "uplinkPort", "port"),
             "device_type": device_type,
             "brand": "Ubiquiti",
             "model": str(device.get("model") or ""),

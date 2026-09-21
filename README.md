@@ -19,6 +19,11 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - Review imported devices in a pre-filled form before saving
 - Configurable brand list with automatic additions during import
 - Import and export compatible CSV files
+- Portable JSON export and restore, plus automatic backups before bulk imports
+- Field-level change history in a dedicated Logs tab
+- Network, VLAN, SSID, connected AP/switch, and switch-port fields
+- Automatic UniFi topology enrichment for devices matched by MAC address
+- Configurable custom tags with device-list chips and tag filtering
 - Search and protocol filters
 - Detailed filters for protocol, type, brand, area, and status
 - Home Assistant area suggestions with support for custom areas
@@ -66,10 +71,13 @@ The importer recognises these spreadsheet columns:
 
 ```text
 Device Code, MAC / IEEE Address, Device IP, Device Type, Brand,
-Area, Device Name, Device ID, Entity Name, Comments, Protocol
+Area, Device Name, Device ID, Entity Name, Comments, Protocol,
+Network, VLAN, SSID, AP / Switch, Switch Port, Tags
 ```
 
 `Device Name`, `Device Type`, `Brand`, `Area`, `MAC / IEEE Address`, and `Protocol` are required. `Device IP` is also required for Wi-Fi and Ethernet devices. `Device Code` can be omitted to assign the next available permanent ID automatically. The importer also accepts `Wi-Fi`, `ZigBee`, `Bluetooth`, `Thread`, `Z-Wave`, `Ethernet`, `Matter`, and `Other` protocol values.
+
+Separate multiple tags in CSV with semicolons. JSON exports include devices, settings, counters, printer configuration, and the change log. Before a multi-row import or JSON restore, Network Inventory preserves a restorable internal backup.
 
 ## Storage and privacy
 
