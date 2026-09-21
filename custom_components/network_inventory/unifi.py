@@ -9,7 +9,7 @@ import re
 from typing import Any
 from urllib.parse import quote
 
-from aiohttp import ClientError, ClientResponseError, ClientTimeout
+from aiohttp import ClientError, ClientTimeout
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -240,8 +240,22 @@ class UniFiCloudManager:
                     params=params,
                     timeout=ClientTimeout(total=35),
                 ) as response:
-                    response.raise_for_status()
                     payload = await response.json(content_type=None)
+                    if response.status >= 400:
+                        message = (
+                            str(payload.get("message") or payload.get("code") or "")
+                            if isinstance(payload, dict)
+                            else ""
+                        )
+                        if response.status in (401, 403):
+                            raise UniFiError(
+                                message
+                                or "The UniFi API key is invalid or lacks permission"
+                            )
+                        detail = f": {message}" if message else ""
+                        raise UniFiError(
+                            f"UniFi Cloud returned HTTP {response.status}{detail}"
+                        )
                 page = payload.get("data", []) if isinstance(payload, dict) else []
                 results.extend(item for item in page if isinstance(item, dict))
                 if site_manager:
@@ -253,10 +267,8 @@ class UniFiCloudManager:
                     if len(results) >= total or not page:
                         break
                     offset += len(page)
-        except ClientResponseError as err:
-            if err.status in (401, 403):
-                raise UniFiError("The UniFi API key is invalid or lacks permission") from err
-            raise UniFiError(f"UniFi Cloud returned HTTP {err.status}") from err
+        except UniFiError:
+            raise
         except (ClientError, TimeoutError, ValueError) as err:
             raise UniFiError(f"Could not contact UniFi Cloud: {err}") from err
         return results
