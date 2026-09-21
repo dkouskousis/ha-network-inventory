@@ -237,6 +237,13 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
             self.manager.data["devices"][0]["tags"], ["Outdoor", "Security"]
         )
 
+    async def test_change_log_keeps_latest_500_entries(self):
+        for index in range(510):
+            self.manager._record_log("settings", details=f"Change {index}")
+        self.assertEqual(len(self.manager.data["logs"]), 500)
+        self.assertEqual(self.manager.data["logs"][0]["details"], "Change 10")
+        self.assertEqual(self.manager.data["logs"][-1]["details"], "Change 509")
+
     async def test_required_fields_and_ip_validation(self):
         with self.assertRaisesRegex(storage.InventoryError, "Type"):
             await self.manager.async_add(

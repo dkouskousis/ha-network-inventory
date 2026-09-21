@@ -73,6 +73,9 @@ class InventoryStore:
         self.data.setdefault("tags", list(DEFAULT_TAGS))
         self.data.setdefault("logs", [])
         self.data.setdefault("backups", [])
+        if len(self.data["logs"]) > 500:
+            self.data["logs"] = self.data["logs"][-500:]
+            migrated = True
         self.data.setdefault(
             "niimbot",
             {"device_id": "", "label_width_mm": 30, "label_height_mm": 15, "margin_mm": 1.5, "top_margin_mm": 2},
@@ -687,7 +690,7 @@ class InventoryStore:
                 cleaned_devices.append(cleaned)
                 codes.add(code)
             candidate["devices"] = cleaned_devices
-            candidate["logs"] = [item for item in candidate["logs"] if isinstance(item, dict)][-1000:]
+            candidate["logs"] = [item for item in candidate["logs"] if isinstance(item, dict)][-500:]
             candidate["tags"] = sorted({str(item).strip()[:60] for item in candidate["tags"] if str(item).strip()}, key=str.casefold)
             candidate["brands"] = sorted({str(item).strip()[:100] for item in candidate["brands"] if str(item).strip()}, key=str.casefold)
             for key, config in protocols.items():
@@ -719,7 +722,7 @@ class InventoryStore:
                 "details": details,
             }
         )
-        self.data["logs"] = self.data["logs"][-1000:]
+        self.data["logs"] = self.data["logs"][-500:]
 
     @staticmethod
     def _device_changes(before: dict[str, Any], after: dict[str, Any]) -> list[dict[str, Any]]:
