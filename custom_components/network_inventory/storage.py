@@ -244,6 +244,91 @@ class InventoryStore:
             await self._store.async_save(self.data)
             return deepcopy(device)
 
+    async def async_bulk_update(
+        self,
+        device_ids: list[str],
+        fields: dict[str, Any],
+        tag_mode: str = "",
+        tags: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Update selected fields on multiple devices as one operation."""
+        allowed_fields = {
+            "device_type",
+            "brand",
+            "network",
+            "vlan",
+            "ssid",
+            "connected_device",
+            "switch_port",
+        }
+        unknown = set(fields) - allowed_fields
+        if unknown:
+            raise InventoryError("Unsupported bulk fields: " + ", ".join(sorted(unknown)))
+        if tag_mode not in {"", "add", "remove", "replace"}:
+            raise InventoryError("Invalid bulk tag operation")
+        if not fields and not tag_mode:
+            raise InventoryError("Select at least one field to update")
+
+        unique_ids = list(dict.fromkeys(str(item) for item in device_ids if str(item)))
+        if not unique_ids:
+            raise InventoryError("Select at least one device")
+
+        async with self._lock:
+            devices = [self._find(internal_id) for internal_id in unique_ids]
+            original = deepcopy(self.data)
+            backup_id = self._create_backup("before_bulk_update")["id"]
+            try:
+                changed_count = 0
+                requested_tags = {
+                    str(tag).strip()[:60] for tag in (tags or []) if str(tag).strip()
+                }
+                for device in devices:
+                    payload = {**device, **fields}
+                    current_tags = set(device.get("tags", []))
+                    if tag_mode == "add":
+                        payload["tags"] = sorted(current_tags | requested_tags, key=str.casefold)
+                    elif tag_mode == "remove":
+                        remove = {tag.casefold() for tag in requested_tags}
+                        payload["tags"] = [
+                            tag for tag in current_tags if tag.casefold() not in remove
+                        ]
+                    elif tag_mode == "replace":
+                        payload["tags"] = sorted(requested_tags, key=str.casefold)
+
+                    updated = self._clean_device(payload)
+                    previous = deepcopy(device)
+                    protected = {
+                        "id": device["id"],
+                        "device_code": device["device_code"],
+                        "created_at": device["created_at"],
+                    }
+                    device.clear()
+                    device.update(updated)
+                    device.update(protected)
+                    changes = self._device_changes(previous, device)
+                    if not changes:
+                        continue
+                    device["updated_at"] = _now()
+                    self._remember_brand(device["brand"])
+                    self._remember_tags(device["tags"])
+                    self._record_log(
+                        "bulk_update",
+                        device=device,
+                        changes=changes,
+                        source="bulk",
+                    )
+                    changed_count += 1
+            except InventoryError:
+                self.data = original
+                raise
+
+            await self._store.async_save(self.data)
+            return {
+                "selected": len(devices),
+                "updated": changed_count,
+                "backup_id": backup_id,
+            }
+
     async def async_delete(self, internal_id: str) -> None:
         """Delete a device. Its numeric code remains consumed."""
         async with self._lock:

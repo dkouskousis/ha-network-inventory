@@ -24,6 +24,7 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - Network, VLAN, SSID, connected AP/switch, and switch-port fields
 - Automatic UniFi topology enrichment for devices matched by MAC address
 - Configurable custom tags with device-list chips and tag filtering
+- Bulk editing for device type, brand, network details, and tags
 - Search and protocol filters
 - Detailed filters for protocol, type, brand, area, and status
 - Home Assistant area suggestions with support for custom areas

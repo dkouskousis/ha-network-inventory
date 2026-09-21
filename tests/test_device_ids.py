@@ -199,6 +199,44 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.manager.data["devices"]), 1)
         self.assertEqual(self.manager.data["devices"][0]["tags"], ["Critical"])
 
+    async def test_bulk_update_creates_backup_and_updates_selected_fields(self):
+        first = await self.manager.async_add(
+            device_payload("First", "wifi", tags=["IoT"])
+        )
+        second = await self.manager.async_add(
+            device_payload("Second", "wifi", mac="00:11:22:33:44:99")
+        )
+        result = await self.manager.async_bulk_update(
+            [first["id"], second["id"]],
+            {"network": "IoT", "vlan": "30", "device_type": "Camera"},
+            "add",
+            ["Critical"],
+        )
+        self.assertEqual(result["updated"], 2)
+        self.assertTrue(result["backup_id"])
+        for device in self.manager.data["devices"]:
+            self.assertEqual(device["network"], "IoT")
+            self.assertEqual(device["vlan"], "30")
+            self.assertEqual(device["device_type"], "Camera")
+            self.assertIn("Critical", device["tags"])
+        bulk_logs = [
+            item for item in self.manager.data["logs"] if item["action"] == "bulk_update"
+        ]
+        self.assertEqual(len(bulk_logs), 2)
+
+    async def test_bulk_tag_remove_and_replace(self):
+        device = await self.manager.async_add(
+            device_payload("Tagged", "zigbee", tags=["IoT", "Battery"])
+        )
+        await self.manager.async_bulk_update([device["id"]], {}, "remove", ["IoT"])
+        self.assertEqual(self.manager.data["devices"][0]["tags"], ["Battery"])
+        await self.manager.async_bulk_update(
+            [device["id"]], {}, "replace", ["Outdoor", "Security"]
+        )
+        self.assertEqual(
+            self.manager.data["devices"][0]["tags"], ["Outdoor", "Security"]
+        )
+
     async def test_required_fields_and_ip_validation(self):
         with self.assertRaisesRegex(storage.InventoryError, "Type"):
             await self.manager.async_add(

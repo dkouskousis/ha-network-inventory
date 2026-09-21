@@ -25,6 +25,7 @@ def async_register_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_list)
     websocket_api.async_register_command(hass, websocket_add)
     websocket_api.async_register_command(hass, websocket_update)
+    websocket_api.async_register_command(hass, websocket_bulk_update)
     websocket_api.async_register_command(hass, websocket_delete)
     websocket_api.async_register_command(hass, websocket_import)
     websocket_api.async_register_command(hass, websocket_export)
@@ -161,6 +162,33 @@ async def websocket_update(
         connection.send_error(msg["id"], "invalid_device", str(err))
         return
     connection.send_result(msg["id"], device)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/bulk_update",
+        vol.Required("device_ids"): [str],
+        vol.Required("fields"): dict,
+        vol.Optional("tag_mode", default=""): str,
+        vol.Optional("tags", default=[]): [str],
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_bulk_update(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Update selected fields on multiple inventory devices."""
+    try:
+        result = await _manager(hass).async_bulk_update(
+            msg["device_ids"], msg["fields"], msg["tag_mode"], msg["tags"]
+        )
+    except InventoryError as err:
+        connection.send_error(msg["id"], "invalid_bulk_update", str(err))
+        return
+    connection.send_result(msg["id"], result)
 
 
 @websocket_api.websocket_command(
