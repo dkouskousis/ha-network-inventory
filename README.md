@@ -11,6 +11,9 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - Official UniFi Cloud integration for connected clients and adopted network devices
 - One-click review before adding a UniFi client to the inventory
 - UniFi badges and live uplink/AP details for matching stored devices
+- Inventory/UniFi IP mismatch warnings with confirmed one-click Inventory updates
+- Duplicate IP detection and filtering, including the conflicting device names
+- Open matching devices in the UniFi portal and display the last UniFi refresh time
 - Review imported devices in a pre-filled form before saving
 - Configurable brand list with automatic additions during import
 - Import and export compatible CSV files

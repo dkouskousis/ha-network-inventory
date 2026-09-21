@@ -58,6 +58,7 @@ class UniFiTests(unittest.TestCase):
         items = [{"id": "client-1", "mac": "aa-bb-cc-dd-ee-ff", "name": "Laptop"}]
         matches, enriched = unifi.match_unifi_items(devices, items)
         self.assertEqual(matches["inventory-1"]["id"], "client-1")
+        self.assertEqual(matches["inventory-1"]["inventory_id"], "inventory-1")
         self.assertEqual(enriched[0]["inventory_id"], "inventory-1")
         self.assertNotIn("inventory_id", items[0])
 

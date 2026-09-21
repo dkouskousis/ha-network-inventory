@@ -22,7 +22,11 @@ const TEXT = {
     createKey: "Create an API key in UniFi", activeClients: "Connected clients and UniFi infrastructure", added: "Added",
     details: "Details", uplink: "Connected to", connectedSince: "Connected since", firmware: "Firmware",
     noUnifi: "No active UniFi clients or infrastructure were returned.", chooseSiteHelp: "Choose which Dream Machine site to activate.",
-    apiKeyPlaceholder: "Paste the UniFi API key", unifiBadge: "View UniFi connection details"
+    apiKeyPlaceholder: "Paste the UniFi API key", unifiBadge: "View UniFi connection details",
+    allIpIssues: "All IP checks", ipMismatch: "Inventory / UniFi mismatch", duplicateIp: "Duplicate IP",
+    unifiIp: "UniFi IP", inventoryIp: "Inventory IP", updateInventoryIp: "Update Inventory IP", addInventoryIp: "Add IP to Inventory",
+    openUnifi: "Open in UniFi", lastRefresh: "Last refresh", sharedWith: "Also assigned to", ipUpdated: "Inventory IP updated",
+    confirmIpUpdate: "Update the Inventory IP", missingIp: "No Inventory IP"
   },
   el: {
     title: "Καταγραφή Συσκευών", overview: "Επισκόπηση", devices: "Συσκευές", homeAssistant: "Home Assistant",
@@ -47,7 +51,11 @@ const TEXT = {
     createKey: "Δημιουργία API key στο UniFi", activeClients: "Συνδεδεμένοι clients και υποδομή UniFi", added: "Προστέθηκε",
     details: "Πληροφορίες", uplink: "Συνδεδεμένο σε", connectedSince: "Συνδεδεμένο από", firmware: "Firmware",
     noUnifi: "Το UniFi δεν επέστρεψε ενεργούς clients ή συσκευές υποδομής.", chooseSiteHelp: "Επίλεξε ποιο site του Dream Machine θα ενεργοποιηθεί.",
-    apiKeyPlaceholder: "Επικόλληση του UniFi API key", unifiBadge: "Πληροφορίες σύνδεσης UniFi"
+    apiKeyPlaceholder: "Επικόλληση του UniFi API key", unifiBadge: "Πληροφορίες σύνδεσης UniFi",
+    allIpIssues: "Όλοι οι έλεγχοι IP", ipMismatch: "Διαφορά Inventory / UniFi", duplicateIp: "Διπλότυπη IP",
+    unifiIp: "IP στο UniFi", inventoryIp: "IP στο Inventory", updateInventoryIp: "Ενημέρωση IP στο Inventory", addInventoryIp: "Προσθήκη IP στο Inventory",
+    openUnifi: "Άνοιγμα στο UniFi", lastRefresh: "Τελευταία ανανέωση", sharedWith: "Χρησιμοποιείται επίσης από", ipUpdated: "Η IP στο Inventory ενημερώθηκε",
+    confirmIpUpdate: "Να ενημερωθεί η IP στο Inventory", missingIp: "Χωρίς IP στο Inventory"
   }
 };
 
@@ -63,6 +71,7 @@ class NetworkInventoryPanel extends HTMLElement {
     this.brandFilter = "";
     this.areaFilter = "";
     this.statusFilter = "";
+    this.ipFilter = "";
     this._started = false;
   }
 
@@ -185,6 +194,7 @@ class NetworkInventoryPanel extends HTMLElement {
         <select id="brand-filter"><option value="">${this.t("allBrands")}</option>${brandOptions}</select>
         <select id="area-filter"><option value="">${this.t("allAreas")}</option>${areaOptions}</select>
         <select id="status-filter"><option value="">${this.t("allStatuses")}</option><option value="online" ${this.statusFilter === "online" ? "selected" : ""}>Online</option><option value="offline" ${this.statusFilter === "offline" ? "selected" : ""}>Offline</option><option value="unknown" ${this.statusFilter === "unknown" ? "selected" : ""}>${this.t("unknown")}</option></select>
+        <select id="ip-filter"><option value="">${this.t("allIpIssues")}</option><option value="mismatch" ${this.ipFilter === "mismatch" ? "selected" : ""}>${this.t("ipMismatch")}</option><option value="duplicate" ${this.ipFilter === "duplicate" ? "selected" : ""}>${this.t("duplicateIp")}</option></select>
         <button class="secondary" data-action="clear-filters"><ha-icon icon="mdi:filter-off-outline"></ha-icon>${this.t("clearFilters")}</button>
       </section>
       <section class="table-card">
@@ -199,13 +209,16 @@ class NetworkInventoryPanel extends HTMLElement {
   deviceRow(d) {
     const protocol = this.data.protocols[d.protocol] || { label: d.protocol, color: "#64748b" };
     const unifi = this.data.unifi_matches?.[d.id];
+    const mismatch = this.hasIpMismatch(d);
+    const duplicates = this.devicesWithIp(d.ip_address).filter(item => item.id !== d.id);
+    const duplicateText = duplicates.map(item => `#${item.device_code} ${item.name}`).join(", ");
     return `<tr>
       <td><span class="code">${d.device_code}</span></td>
       <td><div class="device-name"><strong>${esc(d.name)}</strong>${unifi ? `<button class="unifi-badge" data-unifi-details="${esc(d.id)}" title="${this.t("unifiBadge")}"><ha-icon icon="mdi:access-point-network"></ha-icon>UniFi</button>` : ""}</div><small>${esc(d.model || d.integration || "")}</small></td>
       <td>${esc(d.device_type)}</td><td>${esc(d.brand)}</td><td>${esc(d.area)}</td>
-      <td class="mono">${esc(d.mac)}</td><td class="mono">${esc(d.ip_address)}</td><td class="mono">${esc(d.entity_name)}</td>
+      <td class="mono">${esc(d.mac)}</td><td class="mono ip-cell"><span>${esc(d.ip_address || "—")}</span>${mismatch ? `<small class="ip-warning">${this.t("unifiIp")}: ${esc(unifi.ip_address)} <button data-sync-ip="${esc(d.id)}" title="${this.t(d.ip_address ? "updateInventoryIp" : "addInventoryIp")}"><ha-icon icon="mdi:sync"></ha-icon></button></small>` : ""}${duplicates.length ? `<small class="duplicate-warning" title="${esc(duplicateText)}"><ha-icon icon="mdi:alert-circle-outline"></ha-icon>${this.t("sharedWith")}: ${esc(duplicateText)}</small>` : ""}</td><td class="mono">${esc(d.entity_name)}</td>
       <td><span class="pill" style="--pill:${safeColor(protocol.color)}">${esc(protocol.label)}</span></td>
-      <td><div class="row-actions"><button title="${this.t("edit")}" data-edit="${d.id}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="danger-icon" title="${this.t("delete")}" data-delete="${d.id}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div></td>
+      <td><div class="row-actions">${unifi ? `<a href="https://unifi.ui.com" target="_blank" rel="noopener noreferrer" title="${this.t("openUnifi")}"><ha-icon icon="mdi:open-in-new"></ha-icon></a>` : ""}<button title="${this.t("edit")}" data-edit="${d.id}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="danger-icon" title="${this.t("delete")}" data-delete="${d.id}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div></td>
     </tr>`;
   }
 
@@ -238,10 +251,12 @@ class NetworkInventoryPanel extends HTMLElement {
   renderUnifi() {
     const items = this.data.unifi_items || [];
     const state = this.data.integrations?.unifi || {};
-    return `<section class="section-head"><div><h2>${this.t("unifi")}</h2><p>${this.t("activeClients")} · ${esc(state.site_name || "")}</p></div><button class="secondary" data-action="unifi-refresh"><ha-icon icon="mdi:refresh"></ha-icon>${this.t("refresh")}</button></section>
+    return `<section class="section-head"><div><h2>${this.t("unifi")}</h2><p>${this.t("activeClients")} · ${esc(state.site_name || "")}${state.last_refreshed ? ` · ${this.t("lastRefresh")}: ${esc(formatDate(state.last_refreshed))}` : ""}</p></div><button class="secondary" data-action="unifi-refresh"><ha-icon icon="mdi:refresh"></ha-icon>${this.t("refresh")}</button></section>
       <section class="import-grid">${items.map((item, index) => {
         const p = this.data.protocols[item.protocol] || this.data.protocols.other;
-        return `<article class="import-card"><div class="device-icon unifi-icon"><ha-icon icon="${item.kind === "infrastructure" ? "mdi:access-point-network" : item.protocol === "wifi" ? "mdi:wifi" : "mdi:ethernet"}"></ha-icon></div><div class="grow"><h3>${esc(item.name)}</h3><p>${esc([item.ip_address, item.mac].filter(Boolean).join(" · "))}</p><div class="meta"><span>${esc(item.connection_type || "—")}</span>${item.uplink_name ? `<span>${this.t("uplink")}: ${esc(item.uplink_name)}</span>` : ""}<span class="pill" style="--pill:${safeColor(p.color)}">${esc(p.label)}</span></div></div>${item.inventory_id ? `<button class="secondary compact" data-unifi-details-inventory="${esc(item.inventory_id)}"><ha-icon icon="mdi:check"></ha-icon>${this.t("added")}</button>` : `<button class="primary compact" data-unifi-import="${index}">${this.t("import")}</button>`}</article>`;
+        const inventory = item.inventory_id ? this.data.devices.find(device => device.id === item.inventory_id) : null;
+        const mismatch = inventory && this.hasIpMismatch(inventory);
+        return `<article class="import-card"><div class="device-icon unifi-icon"><ha-icon icon="${item.kind === "infrastructure" ? "mdi:access-point-network" : item.protocol === "wifi" ? "mdi:wifi" : "mdi:ethernet"}"></ha-icon></div><div class="grow"><h3>${esc(item.name)}</h3><p>${esc([item.ip_address, item.mac].filter(Boolean).join(" · "))}</p>${mismatch ? `<p class="ip-warning">${this.t("inventoryIp")}: ${esc(inventory.ip_address || "—")}</p>` : ""}<div class="meta"><span>${esc(item.connection_type || "—")}</span>${item.uplink_name ? `<span>${this.t("uplink")}: ${esc(item.uplink_name)}</span>` : ""}<span class="pill" style="--pill:${safeColor(p.color)}">${esc(p.label)}</span></div></div><div class="card-actions"><a class="secondary compact" href="https://unifi.ui.com" target="_blank" rel="noopener noreferrer"><ha-icon icon="mdi:open-in-new"></ha-icon>${this.t("openUnifi")}</a>${mismatch ? `<button class="secondary compact" data-sync-ip="${esc(item.inventory_id)}"><ha-icon icon="mdi:sync"></ha-icon>${this.t(inventory.ip_address ? "updateInventoryIp" : "addInventoryIp")}</button>` : ""}${item.inventory_id ? `<button class="secondary compact" data-unifi-details-inventory="${esc(item.inventory_id)}"><ha-icon icon="mdi:check"></ha-icon>${this.t("added")}</button>` : `<button class="primary compact" data-unifi-import="${index}">${this.t("import")}</button>`}</div></article>`;
       }).join("")}</section>${items.length ? "" : `<div class="empty standalone"><ha-icon icon="mdi:lan-disconnect"></ha-icon><p>${this.t("noUnifi")}</p></div>`}`;
   }
 
@@ -278,11 +293,11 @@ class NetworkInventoryPanel extends HTMLElement {
     }));
     this.shadowRoot.querySelectorAll("[data-delete]").forEach(button => button.addEventListener("click", () => this.deleteDevice(button.dataset.delete)));
     this.shadowRoot.querySelector("#search")?.addEventListener("input", event => { this.query = event.target.value; this.refreshDeviceBody(); });
-    [["protocol", "protocolFilter"], ["type", "typeFilter"], ["brand", "brandFilter"], ["area", "areaFilter"], ["status", "statusFilter"]].forEach(([id, property]) => {
+    [["protocol", "protocolFilter"], ["type", "typeFilter"], ["brand", "brandFilter"], ["area", "areaFilter"], ["status", "statusFilter"], ["ip", "ipFilter"]].forEach(([id, property]) => {
       this.shadowRoot.querySelector(`#${id}-filter`)?.addEventListener("change", event => { this[property] = event.target.value; this.render(); });
     });
     this.shadowRoot.querySelector("[data-action='clear-filters']")?.addEventListener("click", () => {
-      this.protocolFilter = this.typeFilter = this.brandFilter = this.areaFilter = this.statusFilter = "";
+      this.protocolFilter = this.typeFilter = this.brandFilter = this.areaFilter = this.statusFilter = this.ipFilter = "";
       this.query = "";
       this.render();
     });
@@ -293,6 +308,7 @@ class NetworkInventoryPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll("[data-unifi-import]").forEach(button => button.addEventListener("click", () => this.openDeviceModal(this.unifiImportDevice(this.data.unifi_items[Number(button.dataset.unifiImport)]), true)));
     this.shadowRoot.querySelectorAll("[data-unifi-details]").forEach(button => button.addEventListener("click", () => this.openUnifiDetails(this.data.unifi_matches[button.dataset.unifiDetails])));
     this.shadowRoot.querySelectorAll("[data-unifi-details-inventory]").forEach(button => button.addEventListener("click", () => this.openUnifiDetails(this.data.unifi_matches[button.dataset.unifiDetailsInventory])));
+    this.shadowRoot.querySelectorAll("[data-sync-ip]").forEach(button => button.addEventListener("click", () => this.updateInventoryIp(button.dataset.syncIp)));
     this.shadowRoot.querySelector("#unifi-connect-form")?.addEventListener("submit", event => this.connectUnifi(event));
     this.shadowRoot.querySelector("#unifi-site-form")?.addEventListener("submit", event => this.selectUnifiSite(event));
     this.shadowRoot.querySelectorAll("[data-action='unifi-refresh']").forEach(button => button.addEventListener("click", () => this.refreshUnifi(button)));
@@ -310,6 +326,7 @@ class NetworkInventoryPanel extends HTMLElement {
     tbody.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => this.openDeviceModal(this.data.devices.find(d => d.id === b.dataset.edit))));
     tbody.querySelectorAll("[data-delete]").forEach(b => b.addEventListener("click", () => this.deleteDevice(b.dataset.delete)));
     tbody.querySelectorAll("[data-unifi-details]").forEach(b => b.addEventListener("click", () => this.openUnifiDetails(this.data.unifi_matches[b.dataset.unifiDetails])));
+    tbody.querySelectorAll("[data-sync-ip]").forEach(b => b.addEventListener("click", () => this.updateInventoryIp(b.dataset.syncIp)));
   }
 
   unifiImportDevice(item) {
@@ -369,14 +386,44 @@ class NetworkInventoryPanel extends HTMLElement {
   openUnifiDetails(item) {
     if (!item) return;
     const modal = this.shadowRoot.querySelector("#modal");
+    const inventory = item.inventory_id ? this.data.devices.find(device => device.id === item.inventory_id) : null;
+    const mismatch = inventory && this.hasIpMismatch(inventory);
+    const refreshed = this.data.integrations?.unifi?.last_refreshed;
     const rows = [
-      [this.t("name"), item.name], [this.t("address"), item.mac], [this.t("ip"), item.ip_address],
+      [this.t("name"), item.name], [this.t("address"), item.mac], [this.t("unifiIp"), item.ip_address],
+      ...(inventory ? [[this.t("inventoryIp"), inventory.ip_address || "—"]] : []),
       [this.t("type"), item.connection_type], [this.t("model"), item.model], [this.t("firmware"), item.firmware_version],
       [this.t("uplink"), [item.uplink_name, item.uplink_model, item.uplink_ip].filter(Boolean).join(" · ")],
-      [this.t("connectedSince"), formatDate(item.connected_at)]
+      [this.t("connectedSince"), formatDate(item.connected_at)], [this.t("lastRefresh"), formatDate(refreshed)]
     ].filter(([, value]) => value);
-    modal.innerHTML = `<div class="modal-backdrop"><section class="modal details-modal"><div class="modal-head"><div><h2>${esc(item.name)}</h2><p>UniFi · ${esc(item.connection_type || item.kind)}</p></div><button type="button" data-close><ha-icon icon="mdi:close"></ha-icon></button></div><div class="detail-list">${rows.map(([label, value]) => `<div><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`).join("")}</div></section></div>`;
+    modal.innerHTML = `<div class="modal-backdrop"><section class="modal details-modal"><div class="modal-head"><div><h2>${esc(item.name)}</h2><p>UniFi · ${esc(item.connection_type || item.kind)}</p></div><button type="button" data-close><ha-icon icon="mdi:close"></ha-icon></button></div><div class="detail-list">${rows.map(([label, value]) => `<div><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`).join("")}</div><div class="modal-actions"><a class="secondary" href="https://unifi.ui.com" target="_blank" rel="noopener noreferrer"><ha-icon icon="mdi:open-in-new"></ha-icon>${this.t("openUnifi")}</a>${mismatch ? `<button class="primary" data-sync-ip="${esc(inventory.id)}"><ha-icon icon="mdi:sync"></ha-icon>${this.t(inventory.ip_address ? "updateInventoryIp" : "addInventoryIp")}</button>` : ""}</div></section></div>`;
     modal.querySelector("[data-close]").addEventListener("click", () => modal.innerHTML = "");
+    modal.querySelector("[data-sync-ip]")?.addEventListener("click", event => this.updateInventoryIp(event.currentTarget.dataset.syncIp));
+  }
+
+  normalizedIp(value) { return String(value || "").trim().toLowerCase(); }
+
+  devicesWithIp(ip) {
+    const normalized = this.normalizedIp(ip);
+    return normalized ? this.data.devices.filter(device => this.normalizedIp(device.ip_address) === normalized) : [];
+  }
+
+  hasIpMismatch(device) {
+    const unifi = this.data.unifi_matches?.[device.id];
+    return Boolean(unifi?.ip_address && this.normalizedIp(unifi.ip_address) !== this.normalizedIp(device.ip_address));
+  }
+
+  async updateInventoryIp(deviceId) {
+    const device = this.data.devices.find(item => item.id === deviceId);
+    const unifi = this.data.unifi_matches?.[deviceId];
+    if (!device || !unifi?.ip_address) return;
+    const oldIp = device.ip_address || this.t("missingIp");
+    if (!confirm(`${this.t("confirmIpUpdate")};\n${oldIp} → ${unifi.ip_address}`)) return;
+    try {
+      await this._hass.callWS({ type: "network_inventory/update", device_id: deviceId, device: { ip_address: unifi.ip_address } });
+      this.shadowRoot.querySelector("#modal").innerHTML = "";
+      await this.reload(this.t("ipUpdated"));
+    } catch (error) { this.toast(error?.message || this.t("error"), true); }
   }
 
   filteredDevices() {
@@ -387,6 +434,7 @@ class NetworkInventoryPanel extends HTMLElement {
       (!this.brandFilter || device.brand === this.brandFilter) &&
       (!this.areaFilter || device.area === this.areaFilter) &&
       (!this.statusFilter || device.status === this.statusFilter) &&
+      (!this.ipFilter || (this.ipFilter === "mismatch" && this.hasIpMismatch(device)) || (this.ipFilter === "duplicate" && this.devicesWithIp(device.ip_address).length > 1)) &&
       (!q || Object.values(device).join(" ").toLowerCase().includes(q))
     ).sort((a,b) => a.device_code-b.device_code);
   }
@@ -558,8 +606,8 @@ const BASE_CSS = `
   button{border:0;background:none}.primary,.secondary{height:42px;border-radius:10px;padding:0 15px;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:650;white-space:nowrap}.primary{background:var(--primary-color);color:#fff}.secondary{border:1px solid var(--divider-color);background:var(--card-background-color)}.compact{height:36px;padding:0 12px;font-size:13px}button:disabled{opacity:.55;cursor:wait}
   nav{display:flex;gap:5px;border-bottom:1px solid var(--divider-color);margin-bottom:24px;overflow:auto}.nav{padding:12px 15px;display:flex;align-items:center;gap:8px;color:var(--secondary-text-color);border-bottom:2px solid transparent;white-space:nowrap}.nav.active{color:var(--primary-color);border-color:var(--primary-color);font-weight:650}.nav b{font-size:11px;background:var(--primary-color);color:#fff;border-radius:20px;padding:2px 6px}
   .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}.stat,.card,.table-card,.import-card{background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:14px}.stat{padding:18px;display:flex;align-items:center;gap:14px}.stat-icon{width:44px;height:44px;border-radius:12px;display:grid;place-items:center}.stat-icon.blue{background:#dbeafe;color:#2563eb}.stat-icon.green{background:#d1fae5;color:#059669}.stat-icon.orange{background:#ffedd5;color:#ea580c}.stat-icon.purple{background:#ede9fe;color:#7c3aed}.stat span{display:block;font-size:12px;color:var(--secondary-text-color);margin-bottom:3px}.stat strong{font-size:24px}.grid-two{display:grid;grid-template-columns:1fr 1.3fr;gap:16px}.card{padding:20px}.protocol-list>div{display:grid;grid-template-columns:10px 90px 1fr 28px;align-items:center;gap:9px;margin:14px 0;font-size:13px}.dot{width:9px;height:9px;border-radius:50%}.bar{height:7px;background:var(--divider-color);border-radius:10px;overflow:hidden}.bar i{display:block;height:100%;border-radius:10px}.mini-list button{width:100%;display:grid;grid-template-columns:58px 1fr 24px;align-items:center;text-align:left;padding:10px 5px;border-bottom:1px solid var(--divider-color)}.mini-list button:last-child{border:0}.mini-list small,td small{display:block;color:var(--secondary-text-color);margin-top:3px}.code{font-family:ui-monospace,monospace;font-weight:750;color:var(--primary-color)}
-  .toolbar{display:flex;gap:10px;margin-bottom:10px;padding:12px}.filters{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr)) auto;gap:10px;margin-bottom:14px;padding:12px}.search{flex:1;min-width:190px;display:flex;align-items:center;gap:8px;border:1px solid var(--divider-color);border-radius:9px;padding:0 11px}.search input{border:0;background:transparent;width:100%;outline:0;height:40px}select,input,textarea{border:1px solid var(--divider-color);background:var(--card-background-color);border-radius:8px;padding:10px;outline:none}select:focus,input:focus,textarea:focus{border-color:var(--primary-color);box-shadow:0 0 0 2px color-mix(in srgb,var(--primary-color) 18%,transparent)}.table-card{overflow:hidden}.table-scroll{overflow:auto}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;color:var(--secondary-text-color);font-size:11px;text-transform:uppercase;letter-spacing:.35px;background:var(--secondary-background-color);padding:12px}td{padding:12px;border-top:1px solid var(--divider-color);white-space:nowrap}.mono{font-family:ui-monospace,monospace;font-size:12px}.pill{display:inline-flex;border-radius:20px;padding:4px 9px;background:color-mix(in srgb,var(--pill) 14%,transparent);color:var(--pill);font-size:12px;font-weight:650}.row-actions{display:flex}.row-actions button,.modal-head button,.danger-icon{width:36px;height:36px;border-radius:8px;display:grid;place-items:center}.row-actions button:hover,.modal-head button:hover{background:var(--secondary-background-color)}.danger-icon{color:var(--error-color,#dc2626)}
-  .section-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}.section-head h2{margin:0 0 4px}.import-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.import-card{padding:15px;display:flex;align-items:center;gap:13px}.device-icon{width:42px;height:42px;border-radius:11px;background:var(--secondary-background-color);display:grid;place-items:center;color:var(--primary-color)}.unifi-icon{background:#e0f2fe;color:#0284c7}.grow{flex:1;min-width:0}.import-card p{font-size:12px;color:var(--secondary-text-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.meta{display:flex;gap:7px;margin-top:8px;align-items:center;flex-wrap:wrap}.meta>span:not(.pill){font-size:11px;color:var(--secondary-text-color)}.empty{padding:50px;text-align:center;color:var(--secondary-text-color)}.empty ha-icon{--mdc-icon-size:42px;margin-bottom:10px}.standalone{background:var(--card-background-color);border-radius:14px}
+  .toolbar{display:flex;gap:10px;margin-bottom:10px;padding:12px}.filters{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr)) auto;gap:10px;margin-bottom:14px;padding:12px}.search{flex:1;min-width:190px;display:flex;align-items:center;gap:8px;border:1px solid var(--divider-color);border-radius:9px;padding:0 11px}.search input{border:0;background:transparent;width:100%;outline:0;height:40px}select,input,textarea{border:1px solid var(--divider-color);background:var(--card-background-color);border-radius:8px;padding:10px;outline:none}select:focus,input:focus,textarea:focus{border-color:var(--primary-color);box-shadow:0 0 0 2px color-mix(in srgb,var(--primary-color) 18%,transparent)}.table-card{overflow:hidden}.table-scroll{overflow:auto}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;color:var(--secondary-text-color);font-size:11px;text-transform:uppercase;letter-spacing:.35px;background:var(--secondary-background-color);padding:12px}td{padding:12px;border-top:1px solid var(--divider-color);white-space:nowrap}.mono{font-family:ui-monospace,monospace;font-size:12px}.pill{display:inline-flex;border-radius:20px;padding:4px 9px;background:color-mix(in srgb,var(--pill) 14%,transparent);color:var(--pill);font-size:12px;font-weight:650}.row-actions{display:flex}.row-actions button,.row-actions a,.modal-head button,.danger-icon{width:36px;height:36px;border-radius:8px;display:grid;place-items:center;color:inherit;text-decoration:none}.row-actions button:hover,.row-actions a:hover,.modal-head button:hover{background:var(--secondary-background-color)}.danger-icon{color:var(--error-color,#dc2626)}.ip-cell{white-space:normal;min-width:175px}.ip-cell>span{white-space:nowrap}.ip-warning,.duplicate-warning{display:flex;align-items:center;gap:4px;margin-top:5px;font-family:system-ui,sans-serif;font-size:10px;color:#b45309;white-space:normal}.duplicate-warning{color:var(--error-color,#c62828);max-width:280px}.ip-warning button{display:grid;place-items:center;width:24px;height:24px;border-radius:6px;color:inherit}.ip-warning button:hover{background:#fef3c7}.ip-warning ha-icon,.duplicate-warning ha-icon{--mdc-icon-size:14px;flex:0 0 auto}
+  .section-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}.section-head h2{margin:0 0 4px}.import-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.import-card{padding:15px;display:flex;align-items:center;gap:13px}.card-actions{display:flex;flex-direction:column;gap:7px;align-items:stretch}.card-actions a{text-decoration:none}.device-icon{width:42px;height:42px;border-radius:11px;background:var(--secondary-background-color);display:grid;place-items:center;color:var(--primary-color)}.unifi-icon{background:#e0f2fe;color:#0284c7}.grow{flex:1;min-width:0}.import-card p{font-size:12px;color:var(--secondary-text-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.meta{display:flex;gap:7px;margin-top:8px;align-items:center;flex-wrap:wrap}.meta>span:not(.pill){font-size:11px;color:var(--secondary-text-color)}.empty{padding:50px;text-align:center;color:var(--secondary-text-color)}.empty ha-icon{--mdc-icon-size:42px;margin-bottom:10px}.standalone{background:var(--card-background-color);border-radius:14px}
   .device-name{display:flex;align-items:center;gap:7px}.unifi-badge{display:inline-flex;align-items:center;gap:3px;border-radius:20px;padding:3px 7px;background:#e0f2fe;color:#0369a1;font-size:10px;font-weight:750}.unifi-badge ha-icon{--mdc-icon-size:13px}.integration-card{display:flex;align-items:flex-start;gap:16px}.integration-logo{width:54px;height:54px;flex:0 0 54px;border-radius:14px;background:#e0f2fe;color:#0284c7;display:grid;place-items:center}.integration-logo ha-icon{--mdc-icon-size:30px}.integration-title{display:flex;align-items:center;gap:10px}.integration-title h2{margin:0}.status-dot{font-size:11px;font-weight:700;padding:4px 8px;border-radius:20px;background:var(--secondary-background-color);color:var(--secondary-text-color)}.status-dot.ok{background:#d1fae5;color:#047857}.inline-form{display:flex;align-items:end;gap:10px;margin:16px 0 8px}.inline-form label{display:grid;gap:6px;flex:1;max-width:520px;font-size:12px;color:var(--secondary-text-color)}.inline-form input,.inline-form select{width:100%}.doc-link{display:inline-flex;align-items:center;gap:5px;color:var(--primary-color);font-size:12px;margin-top:12px;text-decoration:none}.doc-link ha-icon{--mdc-icon-size:14px}.integration-actions{display:flex;gap:8px}.danger-text{color:var(--error-color,#c62828)}.inline-error{color:var(--error-color,#c62828);font-size:12px;margin-top:8px}.details-modal{width:min(600px,100%)}.detail-list{padding:8px 20px 22px}.detail-list>div{display:grid;grid-template-columns:150px 1fr;gap:15px;padding:12px 0;border-bottom:1px solid var(--divider-color)}.detail-list span{font-size:12px;color:var(--secondary-text-color)}.detail-list strong{font-size:13px;overflow-wrap:anywhere}
   .settings-card{margin-bottom:14px}.protocol-settings{display:grid;gap:10px}.protocol-setting{display:grid;grid-template-columns:1fr 1.3fr .7fr .7fr .55fr 40px;gap:10px;align-items:end;padding:12px;border:1px solid var(--divider-color);border-radius:10px}.protocol-setting label,.form-grid label{font-size:12px;color:var(--secondary-text-color);display:grid;gap:6px}.protocol-setting input{width:100%}.protocol-setting input[type=color]{height:41px;padding:5px}.settings-card textarea{width:100%;resize:vertical}.form-actions{display:flex;justify-content:flex-end}
   .modal-backdrop{position:fixed;z-index:20;inset:0;background:#0008;display:grid;place-items:center;padding:18px}.modal{width:min(760px,100%);max-height:92vh;overflow:auto;background:var(--card-background-color);border-radius:16px;box-shadow:0 20px 70px #0006}.modal-head{padding:19px 21px;border-bottom:1px solid var(--divider-color);display:flex;justify-content:space-between}.modal-head h2{margin:0 0 4px}.modal-head p{font-size:12px;color:var(--secondary-text-color)}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:20px}.form-grid input,.form-grid select,.form-grid textarea{width:100%}.form-grid .full{grid-column:1/-1}.form-grid small{min-height:13px}.id-field{display:grid;grid-template-columns:1fr 42px;gap:7px}.id-field button{width:42px;padding:0}.modal-actions{padding:15px 20px;border-top:1px solid var(--divider-color);display:flex;justify-content:flex-end;gap:9px}#toast{position:fixed;z-index:30;left:50%;bottom:30px;transform:translate(-50%,30px);background:#17202a;color:#fff;padding:11px 16px;border-radius:9px;opacity:0;pointer-events:none;transition:.2s}#toast.show{opacity:1;transform:translate(-50%,0)}#toast.error{background:var(--error-color,#c62828)}.state{min-height:70vh;display:flex;align-items:center;justify-content:center;gap:12px;color:var(--secondary-text-color)}.spinner{width:22px;height:22px;border:3px solid var(--divider-color);border-top-color:var(--primary-color);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}

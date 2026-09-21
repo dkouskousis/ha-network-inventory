@@ -49,7 +49,9 @@ def match_unifi_items(
     for device in inventory:
         item = by_mac.get(normalize_mac(device.get("mac")))
         if item:
-            matches[str(device["id"])] = deepcopy(item)
+            match = deepcopy(item)
+            match["inventory_id"] = str(device["id"])
+            matches[str(device["id"])] = match
     enriched = []
     for item in items:
         copy = deepcopy(item)
