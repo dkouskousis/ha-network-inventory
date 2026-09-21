@@ -329,9 +329,9 @@ class NetworkInventoryPanel extends HTMLElement {
   async connectUnifi(event) {
     event.preventDefault();
     const form = event.currentTarget;
+    const api_key = new FormData(form).get("api_key");
     this.setBusy(form, true);
     try {
-      const api_key = new FormData(form).get("api_key");
       await this._hass.callWS({ type: "network_inventory/unifi/connect", api_key });
       await this.reload(this.t("saved"));
     } catch (error) { this.toast(error?.message || this.t("error"), true); this.setBusy(form, false); }
@@ -340,7 +340,8 @@ class NetworkInventoryPanel extends HTMLElement {
   async selectUnifiSite(event) {
     event.preventDefault();
     const form = event.currentTarget;
-    const [host_id, site_id] = String(new FormData(form).get("site") || "").split("|");
+    const selectedSite = String(new FormData(form).get("site") || "");
+    const [host_id, site_id] = selectedSite.split("|");
     if (!host_id || !site_id) return;
     this.setBusy(form, true);
     try {
