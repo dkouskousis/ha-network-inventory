@@ -107,11 +107,31 @@ class UniFiCloudManager:
             key = str(api_key or self.data.get("api_key") or "").strip()
             if not key:
                 raise UniFiError("UniFi API key is required")
-            sites = await self._site_manager_sites(key)
-            if not sites:
+            manager_sites = await self._site_manager_sites(key)
+            if not manager_sites:
                 raise UniFiError("No UniFi Network sites are available for this API key")
 
-            choices = [self._site_choice(item) for item in sites]
+            host_ids = sorted(
+                {
+                    str(site.get("hostId") or "")
+                    for site in manager_sites
+                    if site.get("hostId")
+                }
+            )
+            choices: list[dict[str, str]] = []
+            for current_host_id in host_ids:
+                base = CONNECTOR_URL.format(host=quote(current_host_id, safe=""))
+                network_sites = await self._network_page(base, key, "/v1/sites")
+                choices.extend(
+                    self._network_site_choice(
+                        current_host_id, network_site, manager_sites
+                    )
+                    for network_site in network_sites
+                )
+            if not choices:
+                raise UniFiError(
+                    "The selected UniFi consoles did not return any Network sites"
+                )
             selected = next(
                 (
                     item
@@ -242,12 +262,32 @@ class UniFiCloudManager:
         return results
 
     @staticmethod
-    def _site_choice(site: dict[str, Any]) -> dict[str, str]:
-        meta = site.get("meta") if isinstance(site.get("meta"), dict) else {}
+    def _network_site_choice(
+        host_id: str,
+        network_site: dict[str, Any],
+        manager_sites: list[dict[str, Any]],
+    ) -> dict[str, str]:
+        internal_reference = str(network_site.get("internalReference") or "")
+        site_name = str(network_site.get("name") or internal_reference or "Site")
+        manager_site = next(
+            (
+                item
+                for item in manager_sites
+                if str(item.get("hostId") or "") == host_id
+                and isinstance(item.get("meta"), dict)
+                and str(item["meta"].get("name") or "") == internal_reference
+            ),
+            {},
+        )
+        meta = (
+            manager_site.get("meta")
+            if isinstance(manager_site.get("meta"), dict)
+            else {}
+        )
         return {
-            "host_id": str(site.get("hostId") or ""),
-            "site_id": str(site.get("siteId") or ""),
-            "name": str(meta.get("desc") or meta.get("name") or site.get("siteId") or "Site"),
+            "host_id": host_id,
+            "site_id": str(network_site.get("id") or ""),
+            "name": str(meta.get("desc") or site_name),
             "gateway_mac": str(meta.get("gatewayMac") or ""),
         }
 

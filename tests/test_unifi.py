@@ -73,6 +73,29 @@ class UniFiTests(unittest.TestCase):
         self.assertEqual(result["protocol"], "wifi")
         self.assertEqual(result["uplink_name"], "Living Room AP")
 
+    def test_network_site_uuid_is_used_instead_of_site_manager_id(self):
+        manager_sites = [
+            {
+                "siteId": "661de833b6b2463f0c20b319",
+                "hostId": "console-1",
+                "meta": {
+                    "name": "default",
+                    "desc": "Home",
+                    "gatewayMac": "00:11:22:33:44:55",
+                },
+            }
+        ]
+        network_site = {
+            "id": "210c0702-6f1c-40a5-a2ac-46c4c1ca1285",
+            "internalReference": "default",
+            "name": "Default",
+        }
+        result = unifi.UniFiCloudManager._network_site_choice(
+            "console-1", network_site, manager_sites
+        )
+        self.assertEqual(result["site_id"], network_site["id"])
+        self.assertEqual(result["name"], "Home")
+
 
 if __name__ == "__main__":
     unittest.main()
