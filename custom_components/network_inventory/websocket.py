@@ -74,6 +74,7 @@ def _niimbot_status(
         "label_width_mm": settings.get("label_width_mm", 30),
         "label_height_mm": settings.get("label_height_mm", 15),
         "margin_mm": settings.get("margin_mm", 1.5),
+        "top_margin_mm": settings.get("top_margin_mm", 2),
         "connected": bool(selected and any(item["device_id"] == selected for item in printers)),
     }
 
@@ -269,6 +270,7 @@ async def websocket_unifi_refresh(
         vol.Required("label_width_mm"): vol.Coerce(float),
         vol.Required("label_height_mm"): vol.Coerce(float),
         vol.Required("margin_mm"): vol.Coerce(float),
+        vol.Required("top_margin_mm"): vol.Coerce(float),
     }
 )
 @websocket_api.require_admin
@@ -286,14 +288,18 @@ async def websocket_niimbot_configure(
     width = msg["label_width_mm"]
     height = msg["label_height_mm"]
     margin = msg["margin_mm"]
+    top_margin = msg["top_margin_mm"]
     if not 20 <= width <= 200 or not 8 <= height <= 15:
         connection.send_error(msg["id"], "niimbot_error", "D11H label size must be 20–200 × 8–15 mm")
         return
     if not 0.5 <= margin <= 3 or margin * 2 >= height:
         connection.send_error(msg["id"], "niimbot_error", "Label margin must be between 0.5 and 3 mm")
         return
+    if not 0.5 <= top_margin <= 4 or top_margin + margin >= height:
+        connection.send_error(msg["id"], "niimbot_error", "Top margin must be between 0.5 and 4 mm")
+        return
     result = await _manager(hass).async_save_niimbot(
-        msg["device_id"], width, height, margin
+        msg["device_id"], width, height, margin, top_margin
     )
     connection.send_result(msg["id"], result)
 
@@ -335,8 +341,7 @@ async def websocket_niimbot_print(
     width = round(float(settings["label_width_mm"]) * pixels_per_mm)
     height = round(float(settings["label_height_mm"]) * pixels_per_mm)
     margin = round(float(settings["margin_mm"]) * pixels_per_mm)
-    top_compensation = round(0.5 * pixels_per_mm)
-    content_y = margin + top_compensation
+    content_y = round(float(settings["top_margin_mm"]) * pixels_per_mm)
     content_width = width - (margin * 2)
     content_height = height - content_y - margin
     name_height = round(content_height * 0.48)

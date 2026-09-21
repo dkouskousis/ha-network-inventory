@@ -30,7 +30,7 @@ const TEXT = {
     niimbotHelp: "Use the NIIMBOT printer configured in Home Assistant to print device labels.", selectPrinter: "Select printer",
     printerReady: "Printer ready", printerMissing: "NIIMBOT is not configured in Home Assistant", printLabel: "Print label",
     confirmPrint: "Print a label for this device?", printed: "Label sent to printer", labelWidth: "Label length (mm)",
-    labelHeight: "Label width (mm)", labelMargin: "Safe margin (mm)"
+    labelHeight: "Label width (mm)", labelMargin: "Side margin (mm)", labelTopMargin: "Top margin (mm)"
   },
   el: {
     title: "Καταγραφή Συσκευών", overview: "Επισκόπηση", devices: "Συσκευές", homeAssistant: "Home Assistant",
@@ -63,7 +63,7 @@ const TEXT = {
     niimbotHelp: "Χρησιμοποίησε τον NIIMBOT που έχει ρυθμιστεί στο Home Assistant για εκτύπωση ετικετών συσκευών.", selectPrinter: "Επιλογή εκτυπωτή",
     printerReady: "Ο εκτυπωτής είναι έτοιμος", printerMissing: "Το NIIMBOT δεν έχει ρυθμιστεί στο Home Assistant", printLabel: "Εκτύπωση label",
     confirmPrint: "Να εκτυπωθεί label για αυτή τη συσκευή;", printed: "Το label στάλθηκε στον εκτυπωτή", labelWidth: "Μήκος label (mm)",
-    labelHeight: "Πλάτος label (mm)", labelMargin: "Ασφαλές περιθώριο (mm)"
+    labelHeight: "Πλάτος label (mm)", labelMargin: "Πλευρικό περιθώριο (mm)", labelTopMargin: "Επάνω περιθώριο (mm)"
   }
 };
 
@@ -260,7 +260,7 @@ class NetworkInventoryPanel extends HTMLElement {
         <div class="integration-logo niimbot-logo"><ha-icon icon="mdi:printer-outline"></ha-icon></div>
         <div class="grow"><div class="integration-title"><h2>${this.t("niimbot")}</h2><span class="status-dot ${niimbot.connected ? "ok" : ""}">${niimbot.connected ? this.t("printerReady") : this.t("notConnected")}</span></div>
           <p class="muted">${niimbot.installed ? this.t("niimbotHelp") : this.t("printerMissing")}</p>
-          ${niimbot.installed && printerOptions ? `<form id="niimbot-form" class="inline-form niimbot-form"><label>${this.t("selectPrinter")}<select name="device_id" required><option value=""></option>${printerOptions}</select></label><label>${this.t("labelWidth")}<input name="label_width_mm" type="number" min="20" max="200" step="0.5" value="${esc(niimbot.label_width_mm || 30)}" required></label><label>${this.t("labelHeight")}<input name="label_height_mm" type="number" min="8" max="15" step="0.5" value="${esc(niimbot.label_height_mm || 15)}" required></label><label>${this.t("labelMargin")}<input name="margin_mm" type="number" min="0.5" max="3" step="0.5" value="${esc(niimbot.margin_mm || 1.5)}" required></label><button class="primary" type="submit">${this.t("save")}</button></form>` : ""}
+          ${niimbot.installed && printerOptions ? `<form id="niimbot-form" class="inline-form niimbot-form"><label>${this.t("selectPrinter")}<select name="device_id" required><option value=""></option>${printerOptions}</select></label><label>${this.t("labelWidth")}<input name="label_width_mm" type="number" min="20" max="200" step="0.5" value="${esc(niimbot.label_width_mm || 30)}" required></label><label>${this.t("labelHeight")}<input name="label_height_mm" type="number" min="8" max="15" step="0.5" value="${esc(niimbot.label_height_mm || 15)}" required></label><label>${this.t("labelMargin")}<input name="margin_mm" type="number" min="0.5" max="3" step="0.5" value="${esc(niimbot.margin_mm || 1.5)}" required></label><label>${this.t("labelTopMargin")}<input name="top_margin_mm" type="number" min="0.5" max="4" step="0.5" value="${esc(niimbot.top_margin_mm || 2)}" required></label><button class="primary" type="submit">${this.t("save")}</button></form>` : ""}
         </div>
       </article>`;
   }
@@ -410,10 +410,11 @@ class NetworkInventoryPanel extends HTMLElement {
     const label_width_mm = Number(new FormData(form).get("label_width_mm"));
     const label_height_mm = Number(new FormData(form).get("label_height_mm"));
     const margin_mm = Number(new FormData(form).get("margin_mm"));
+    const top_margin_mm = Number(new FormData(form).get("top_margin_mm"));
     if (!device_id) return;
     this.setBusy(form, true);
     try {
-      await this._hass.callWS({ type: "network_inventory/niimbot/configure", device_id, label_width_mm, label_height_mm, margin_mm });
+      await this._hass.callWS({ type: "network_inventory/niimbot/configure", device_id, label_width_mm, label_height_mm, margin_mm, top_margin_mm });
       await this.reload(this.t("saved"));
     } catch (error) { this.toast(error?.message || this.t("error"), true); this.setBusy(form, false); }
   }

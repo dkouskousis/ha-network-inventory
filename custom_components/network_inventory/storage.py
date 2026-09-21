@@ -68,11 +68,12 @@ class InventoryStore:
         self.data.setdefault("device_types", list(DEFAULT_DEVICE_TYPES))
         self.data.setdefault(
             "niimbot",
-            {"device_id": "", "label_width_mm": 30, "label_height_mm": 15, "margin_mm": 1.5},
+            {"device_id": "", "label_width_mm": 30, "label_height_mm": 15, "margin_mm": 1.5, "top_margin_mm": 2},
         )
         self.data["niimbot"].setdefault("label_width_mm", 30)
         self.data["niimbot"].setdefault("label_height_mm", 15)
         self.data["niimbot"].setdefault("margin_mm", 1.5)
+        self.data["niimbot"].setdefault("top_margin_mm", 2)
         if self.data.get("device_types_version", 0) < DEVICE_TYPES_VERSION:
             current_types = {item.casefold() for item in self.data["device_types"]}
             self.data["device_types"].extend(
@@ -109,6 +110,7 @@ class InventoryStore:
         label_width_mm: float,
         label_height_mm: float,
         margin_mm: float,
+        top_margin_mm: float,
     ) -> dict[str, Any]:
         """Save the Home Assistant device used for label printing."""
         async with self._lock:
@@ -117,6 +119,7 @@ class InventoryStore:
                 "label_width_mm": label_width_mm,
                 "label_height_mm": label_height_mm,
                 "margin_mm": margin_mm,
+                "top_margin_mm": top_margin_mm,
             }
             await self._store.async_save(self.data)
             return deepcopy(self.data["niimbot"])
