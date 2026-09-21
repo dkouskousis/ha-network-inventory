@@ -29,7 +29,8 @@ const TEXT = {
     confirmIpUpdate: "Update the Inventory IP", missingIp: "No Inventory IP", niimbot: "NIIMBOT label printer",
     niimbotHelp: "Use the NIIMBOT printer configured in Home Assistant to print device labels.", selectPrinter: "Select printer",
     printerReady: "Printer ready", printerMissing: "NIIMBOT is not configured in Home Assistant", printLabel: "Print label",
-    confirmPrint: "Print a label for this device?", printed: "Label sent to printer"
+    confirmPrint: "Print a label for this device?", printed: "Label sent to printer", labelWidth: "Label length (mm)",
+    labelHeight: "Label width (mm)", labelMargin: "Safe margin (mm)"
   },
   el: {
     title: "Καταγραφή Συσκευών", overview: "Επισκόπηση", devices: "Συσκευές", homeAssistant: "Home Assistant",
@@ -61,7 +62,8 @@ const TEXT = {
     confirmIpUpdate: "Να ενημερωθεί η IP στο Inventory", missingIp: "Χωρίς IP στο Inventory", niimbot: "Εκτυπωτής ετικετών NIIMBOT",
     niimbotHelp: "Χρησιμοποίησε τον NIIMBOT που έχει ρυθμιστεί στο Home Assistant για εκτύπωση ετικετών συσκευών.", selectPrinter: "Επιλογή εκτυπωτή",
     printerReady: "Ο εκτυπωτής είναι έτοιμος", printerMissing: "Το NIIMBOT δεν έχει ρυθμιστεί στο Home Assistant", printLabel: "Εκτύπωση label",
-    confirmPrint: "Να εκτυπωθεί label για αυτή τη συσκευή;", printed: "Το label στάλθηκε στον εκτυπωτή"
+    confirmPrint: "Να εκτυπωθεί label για αυτή τη συσκευή;", printed: "Το label στάλθηκε στον εκτυπωτή", labelWidth: "Μήκος label (mm)",
+    labelHeight: "Πλάτος label (mm)", labelMargin: "Ασφαλές περιθώριο (mm)"
   }
 };
 
@@ -258,7 +260,7 @@ class NetworkInventoryPanel extends HTMLElement {
         <div class="integration-logo niimbot-logo"><ha-icon icon="mdi:printer-outline"></ha-icon></div>
         <div class="grow"><div class="integration-title"><h2>${this.t("niimbot")}</h2><span class="status-dot ${niimbot.connected ? "ok" : ""}">${niimbot.connected ? this.t("printerReady") : this.t("notConnected")}</span></div>
           <p class="muted">${niimbot.installed ? this.t("niimbotHelp") : this.t("printerMissing")}</p>
-          ${niimbot.installed && printerOptions ? `<form id="niimbot-form" class="inline-form"><label>${this.t("selectPrinter")}<select name="device_id" required><option value=""></option>${printerOptions}</select></label><button class="primary" type="submit">${this.t("save")}</button></form>` : ""}
+          ${niimbot.installed && printerOptions ? `<form id="niimbot-form" class="inline-form niimbot-form"><label>${this.t("selectPrinter")}<select name="device_id" required><option value=""></option>${printerOptions}</select></label><label>${this.t("labelWidth")}<input name="label_width_mm" type="number" min="20" max="200" step="0.5" value="${esc(niimbot.label_width_mm || 30)}" required></label><label>${this.t("labelHeight")}<input name="label_height_mm" type="number" min="8" max="15" step="0.5" value="${esc(niimbot.label_height_mm || 15)}" required></label><label>${this.t("labelMargin")}<input name="margin_mm" type="number" min="0.5" max="3" step="0.5" value="${esc(niimbot.margin_mm || 1.5)}" required></label><button class="primary" type="submit">${this.t("save")}</button></form>` : ""}
         </div>
       </article>`;
   }
@@ -405,10 +407,13 @@ class NetworkInventoryPanel extends HTMLElement {
     event.preventDefault();
     const form = event.currentTarget;
     const device_id = String(new FormData(form).get("device_id") || "");
+    const label_width_mm = Number(new FormData(form).get("label_width_mm"));
+    const label_height_mm = Number(new FormData(form).get("label_height_mm"));
+    const margin_mm = Number(new FormData(form).get("margin_mm"));
     if (!device_id) return;
     this.setBusy(form, true);
     try {
-      await this._hass.callWS({ type: "network_inventory/niimbot/configure", device_id });
+      await this._hass.callWS({ type: "network_inventory/niimbot/configure", device_id, label_width_mm, label_height_mm, margin_mm });
       await this.reload(this.t("saved"));
     } catch (error) { this.toast(error?.message || this.t("error"), true); this.setBusy(form, false); }
   }
@@ -641,7 +646,7 @@ function csvToDevices(text) {
 }
 
 const BASE_CSS = `
-  .integration-gap{margin-top:14px}.niimbot-logo{background:#f3e8ff!important;color:#7e22ce!important}
+  .integration-gap{margin-top:14px}.niimbot-logo{background:#f3e8ff!important;color:#7e22ce!important}.niimbot-form{max-width:none;flex-wrap:wrap}.niimbot-form label:first-child{min-width:230px}.niimbot-form label:not(:first-child){max-width:145px}
   :host{display:block;min-height:100%;background:var(--primary-background-color);color:var(--primary-text-color);font-family:var(--paper-font-body1_-_font-family,system-ui,sans-serif)}
   *{box-sizing:border-box}button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer}.app{max-width:1500px;margin:auto;padding:24px 28px 60px}header{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}h1{font-size:28px;margin:0 0 3px;letter-spacing:-.4px}h2{font-size:18px;margin:0 0 18px}h3{font-size:15px;margin:0 0 5px}p{margin:0}header p,.section-head p,.muted{color:var(--secondary-text-color);font-size:13px}
   .title-row{display:flex;align-items:center;gap:9px}.version{font-size:11px;font-weight:700;color:var(--secondary-text-color);border:1px solid var(--divider-color);border-radius:20px;padding:3px 7px}

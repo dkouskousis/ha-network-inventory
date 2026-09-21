@@ -71,6 +71,9 @@ def _niimbot_status(
         "installed": bool(hass.config_entries.async_entries("niimbot")),
         "printers": printers,
         "device_id": selected,
+        "label_width_mm": settings.get("label_width_mm", 30),
+        "label_height_mm": settings.get("label_height_mm", 15),
+        "margin_mm": settings.get("margin_mm", 1.5),
         "connected": bool(selected and any(item["device_id"] == selected for item in printers)),
     }
 
@@ -263,6 +266,9 @@ async def websocket_unifi_refresh(
     {
         vol.Required("type"): f"{DOMAIN}/niimbot/configure",
         vol.Required("device_id"): str,
+        vol.Required("label_width_mm"): vol.Coerce(float),
+        vol.Required("label_height_mm"): vol.Coerce(float),
+        vol.Required("margin_mm"): vol.Coerce(float),
     }
 )
 @websocket_api.require_admin
@@ -277,8 +283,19 @@ async def websocket_niimbot_configure(
     if msg["device_id"] not in printers:
         connection.send_error(msg["id"], "niimbot_error", "NIIMBOT printer not found")
         return
-    await _manager(hass).async_save_niimbot(msg["device_id"])
-    connection.send_result(msg["id"], {"device_id": msg["device_id"]})
+    width = msg["label_width_mm"]
+    height = msg["label_height_mm"]
+    margin = msg["margin_mm"]
+    if not 20 <= width <= 200 or not 8 <= height <= 15:
+        connection.send_error(msg["id"], "niimbot_error", "D11H label size must be 20–200 × 8–15 mm")
+        return
+    if not 0.5 <= margin <= 3 or margin * 2 >= height:
+        connection.send_error(msg["id"], "niimbot_error", "Label margin must be between 0.5 and 3 mm")
+        return
+    result = await _manager(hass).async_save_niimbot(
+        msg["device_id"], width, height, margin
+    )
+    connection.send_result(msg["id"], result)
 
 
 @websocket_api.websocket_command(
@@ -296,7 +313,8 @@ async def websocket_niimbot_print(
 ) -> None:
     """Print a temporary D11H inventory label."""
     data = await _manager(hass).async_snapshot()
-    printer_id = str(data.get("niimbot", {}).get("device_id") or "")
+    settings = data.get("niimbot", {})
+    printer_id = str(settings.get("device_id") or "")
     device = next(
         (item for item in data["devices"] if item["id"] == msg["device_id"]),
         None,
@@ -313,29 +331,47 @@ async def websocket_niimbot_print(
         connection.send_error(msg["id"], "niimbot_error", "NIIMBOT print service is unavailable")
         return
 
+    pixels_per_mm = 300 / 25.4
+    width = round(float(settings["label_width_mm"]) * pixels_per_mm)
+    height = round(float(settings["label_height_mm"]) * pixels_per_mm)
+    margin = round(float(settings["margin_mm"]) * pixels_per_mm)
+    content_width = width - (margin * 2)
+    content_height = height - (margin * 2)
+    name_height = round(content_height * 0.48)
+    detail_height = round(content_height * 0.26)
+    protocol = data["protocols"].get(device["protocol"], {}).get(
+        "label", device["protocol"]
+    )
     service_data = {
         "payload": [
             {
                 "type": "new_multiline",
                 "value": device["name"],
-                "x": 8,
-                "y": 6,
-                "width": 338,
-                "height": 105,
-                "size": 42,
+                "x": margin,
+                "y": margin,
+                "width": content_width,
+                "height": name_height,
+                "size": 38,
                 "fit": True,
             },
             {
                 "type": "text",
-                "value": f"ID: {device['device_code']}",
-                "x": 8,
-                "y": 120,
-                "size": 34,
+                "value": f"ID {device['device_code']}  |  {protocol}",
+                "x": margin,
+                "y": margin + name_height,
+                "size": 25,
+            },
+            {
+                "type": "text",
+                "value": device["mac"],
+                "x": margin,
+                "y": margin + name_height + detail_height,
+                "size": 20,
             },
         ],
         "rotate": 90,
-        "width": 354,
-        "height": 178,
+        "width": width,
+        "height": height,
         "density": 3,
         "label_type": 1,
         "copies": 1,

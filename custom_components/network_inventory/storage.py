@@ -66,7 +66,13 @@ class InventoryStore:
         self.data.setdefault("devices", [])
         self.data.setdefault("protocols", deepcopy(DEFAULT_PROTOCOLS))
         self.data.setdefault("device_types", list(DEFAULT_DEVICE_TYPES))
-        self.data.setdefault("niimbot", {"device_id": ""})
+        self.data.setdefault(
+            "niimbot",
+            {"device_id": "", "label_width_mm": 30, "label_height_mm": 15, "margin_mm": 1.5},
+        )
+        self.data["niimbot"].setdefault("label_width_mm", 30)
+        self.data["niimbot"].setdefault("label_height_mm", 15)
+        self.data["niimbot"].setdefault("margin_mm", 1.5)
         if self.data.get("device_types_version", 0) < DEVICE_TYPES_VERSION:
             current_types = {item.casefold() for item in self.data["device_types"]}
             self.data["device_types"].extend(
@@ -97,10 +103,21 @@ class InventoryStore:
         """Return a safe copy of all stored data."""
         return deepcopy(self.data)
 
-    async def async_save_niimbot(self, device_id: str) -> dict[str, str]:
+    async def async_save_niimbot(
+        self,
+        device_id: str,
+        label_width_mm: float,
+        label_height_mm: float,
+        margin_mm: float,
+    ) -> dict[str, Any]:
         """Save the Home Assistant device used for label printing."""
         async with self._lock:
-            self.data["niimbot"] = {"device_id": str(device_id).strip()}
+            self.data["niimbot"] = {
+                "device_id": str(device_id).strip(),
+                "label_width_mm": label_width_mm,
+                "label_height_mm": label_height_mm,
+                "margin_mm": margin_mm,
+            }
             await self._store.async_save(self.data)
             return deepcopy(self.data["niimbot"])
 

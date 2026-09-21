@@ -149,8 +149,9 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Imported Brand", self.manager.data["brands"])
 
     async def test_niimbot_printer_selection_is_stored(self):
-        result = await self.manager.async_save_niimbot("printer-device-id")
+        result = await self.manager.async_save_niimbot("printer-device-id", 40, 15, 1.5)
         self.assertEqual(result["device_id"], "printer-device-id")
+        self.assertEqual(result["label_width_mm"], 40)
         self.assertEqual(self.manager.data["niimbot"]["device_id"], "printer-device-id")
 
     async def test_required_fields_and_ip_validation(self):
