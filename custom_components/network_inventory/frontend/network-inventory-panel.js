@@ -13,7 +13,9 @@ const TEXT = {
     key: "Key", confirmDelete: "Delete this device? Its Device ID will not be reused.", requiredName: "Device name is required.",
     loading: "Loading…", saved: "Saved", imported: "devices imported", skipped: "skipped", error: "Something went wrong",
     autoId: "Assigned automatically when saved", stableId: "The Device ID remains unchanged if the protocol changes.",
-    noHa: "All Home Assistant devices have already been imported.", manual: "Manual inventory", unknown: "Unknown"
+    noHa: "All Home Assistant devices have already been imported.", manual: "Manual inventory", unknown: "Unknown",
+    allTypes: "All types", allBrands: "All brands", allAreas: "All areas", allStatuses: "All statuses",
+    clearFilters: "Clear filters", clearId: "Clear Device ID", newIdHelp: "A new ID will be assigned from the selected protocol when saved."
   },
   el: {
     title: "Καταγραφή Συσκευών", overview: "Επισκόπηση", devices: "Συσκευές", homeAssistant: "Home Assistant",
@@ -29,7 +31,9 @@ const TEXT = {
     key: "Κλειδί", confirmDelete: "Να διαγραφεί η συσκευή; Το Device ID της δεν θα χρησιμοποιηθεί ξανά.", requiredName: "Το όνομα είναι υποχρεωτικό.",
     loading: "Φόρτωση…", saved: "Αποθηκεύτηκε", imported: "συσκευές εισήχθησαν", skipped: "παραλείφθηκαν", error: "Παρουσιάστηκε σφάλμα",
     autoId: "Δίνεται αυτόματα κατά την αποθήκευση", stableId: "Το Device ID δεν αλλάζει αν αλλάξει το πρωτόκολλο.",
-    noHa: "Όλες οι συσκευές του Home Assistant έχουν ήδη εισαχθεί.", manual: "Χειροκίνητη καταγραφή", unknown: "Άγνωστη"
+    noHa: "Όλες οι συσκευές του Home Assistant έχουν ήδη εισαχθεί.", manual: "Χειροκίνητη καταγραφή", unknown: "Άγνωστη",
+    allTypes: "Όλοι οι τύποι", allBrands: "Όλα τα brands", allAreas: "Όλοι οι χώροι", allStatuses: "Όλες οι καταστάσεις",
+    clearFilters: "Καθαρισμός φίλτρων", clearId: "Διαγραφή Device ID", newIdHelp: "Με την αποθήκευση θα δοθεί νέο ID από το επιλεγμένο πρωτόκολλο."
   }
 };
 
@@ -41,6 +45,10 @@ class NetworkInventoryPanel extends HTMLElement {
     this.view = "overview";
     this.query = "";
     this.protocolFilter = "";
+    this.typeFilter = "";
+    this.brandFilter = "";
+    this.areaFilter = "";
+    this.statusFilter = "";
     this._started = false;
   }
 
@@ -87,7 +95,7 @@ class NetworkInventoryPanel extends HTMLElement {
       <style>${BASE_CSS}</style>
       <div class="app">
         <header>
-          <div><h1>${this.t("title")}</h1><p>${this.data.devices.length} ${this.t("devices").toLowerCase()}</p></div>
+          <div><div class="title-row"><h1>${this.t("title")}</h1><span class="version">v${esc(this.data.version)}</span></div><p>${this.data.devices.length} ${this.t("devices").toLowerCase()}</p></div>
           <button class="primary" data-action="add"><ha-icon icon="mdi:plus"></ha-icon>${this.t("addDevice")}</button>
         </header>
         <nav>
@@ -140,19 +148,26 @@ class NetworkInventoryPanel extends HTMLElement {
 
   renderDevices() {
     const protocolOptions = Object.entries(this.data.protocols).map(([key, p]) => `<option value="${esc(key)}" ${this.protocolFilter === key ? "selected" : ""}>${esc(p.label)}</option>`).join("");
-    const q = this.query.toLowerCase();
-    const devices = [...this.data.devices].filter(d => {
-      const matchesProtocol = !this.protocolFilter || d.protocol === this.protocolFilter;
-      const haystack = Object.values(d).join(" ").toLowerCase();
-      return matchesProtocol && (!q || haystack.includes(q));
-    }).sort((a, b) => a.device_code - b.device_code);
+    const option = (value, selected) => `<option value="${esc(value)}" ${selected === value ? "selected" : ""}>${esc(value)}</option>`;
+    const typeOptions = this.data.device_types.map(value => option(value, this.typeFilter)).join("");
+    const brandOptions = this.data.brands.map(value => option(value, this.brandFilter)).join("");
+    const areas = [...new Set([...this.data.areas, ...this.data.devices.map(device => device.area).filter(Boolean)])].sort((a,b) => a.localeCompare(b));
+    const areaOptions = areas.map(value => option(value, this.areaFilter)).join("");
+    const devices = this.filteredDevices();
     return `
       <section class="toolbar card">
         <label class="search"><ha-icon icon="mdi:magnify"></ha-icon><input id="search" value="${esc(this.query)}" placeholder="${this.t("search")}"></label>
-        <select id="protocol-filter"><option value="">${this.t("allProtocols")}</option>${protocolOptions}</select>
         <input type="file" id="csv-file" accept=".csv,text/csv" hidden>
         <button class="secondary" data-action="csv"><ha-icon icon="mdi:file-upload-outline"></ha-icon>${this.t("chooseCsv")}</button>
         <button class="secondary" data-action="export"><ha-icon icon="mdi:file-download-outline"></ha-icon>${this.t("exportCsv")}</button>
+      </section>
+      <section class="filters card">
+        <select id="protocol-filter"><option value="">${this.t("allProtocols")}</option>${protocolOptions}</select>
+        <select id="type-filter"><option value="">${this.t("allTypes")}</option>${typeOptions}</select>
+        <select id="brand-filter"><option value="">${this.t("allBrands")}</option>${brandOptions}</select>
+        <select id="area-filter"><option value="">${this.t("allAreas")}</option>${areaOptions}</select>
+        <select id="status-filter"><option value="">${this.t("allStatuses")}</option><option value="online" ${this.statusFilter === "online" ? "selected" : ""}>Online</option><option value="offline" ${this.statusFilter === "offline" ? "selected" : ""}>Offline</option><option value="unknown" ${this.statusFilter === "unknown" ? "selected" : ""}>${this.t("unknown")}</option></select>
+        <button class="secondary" data-action="clear-filters"><ha-icon icon="mdi:filter-off-outline"></ha-icon>${this.t("clearFilters")}</button>
       </section>
       <section class="table-card">
         <div class="table-scroll"><table><thead><tr>
@@ -217,7 +232,14 @@ class NetworkInventoryPanel extends HTMLElement {
     }));
     this.shadowRoot.querySelectorAll("[data-delete]").forEach(button => button.addEventListener("click", () => this.deleteDevice(button.dataset.delete)));
     this.shadowRoot.querySelector("#search")?.addEventListener("input", event => { this.query = event.target.value; this.refreshDeviceBody(); });
-    this.shadowRoot.querySelector("#protocol-filter")?.addEventListener("change", event => { this.protocolFilter = event.target.value; this.render(); });
+    [["protocol", "protocolFilter"], ["type", "typeFilter"], ["brand", "brandFilter"], ["area", "areaFilter"], ["status", "statusFilter"]].forEach(([id, property]) => {
+      this.shadowRoot.querySelector(`#${id}-filter`)?.addEventListener("change", event => { this[property] = event.target.value; this.render(); });
+    });
+    this.shadowRoot.querySelector("[data-action='clear-filters']")?.addEventListener("click", () => {
+      this.protocolFilter = this.typeFilter = this.brandFilter = this.areaFilter = this.statusFilter = "";
+      this.query = "";
+      this.render();
+    });
     this.shadowRoot.querySelector("[data-action='export']")?.addEventListener("click", () => this.exportCsv());
     this.shadowRoot.querySelector("[data-action='csv']")?.addEventListener("click", () => this.shadowRoot.querySelector("#csv-file").click());
     this.shadowRoot.querySelector("#csv-file")?.addEventListener("change", event => this.importCsv(event.target.files[0]));
@@ -228,13 +250,24 @@ class NetworkInventoryPanel extends HTMLElement {
   }
 
   refreshDeviceBody() {
-    const q = this.query.toLowerCase();
     const tbody = this.shadowRoot.querySelector("tbody");
     if (!tbody) return;
-    const devices = this.data.devices.filter(d => (!this.protocolFilter || d.protocol === this.protocolFilter) && Object.values(d).join(" ").toLowerCase().includes(q)).sort((a,b) => a.device_code-b.device_code);
+    const devices = this.filteredDevices();
     tbody.innerHTML = devices.map(d => this.deviceRow(d)).join("");
     tbody.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => this.openDeviceModal(this.data.devices.find(d => d.id === b.dataset.edit))));
     tbody.querySelectorAll("[data-delete]").forEach(b => b.addEventListener("click", () => this.deleteDevice(b.dataset.delete)));
+  }
+
+  filteredDevices() {
+    const q = this.query.toLowerCase();
+    return [...this.data.devices].filter(device =>
+      (!this.protocolFilter || device.protocol === this.protocolFilter) &&
+      (!this.typeFilter || device.device_type === this.typeFilter) &&
+      (!this.brandFilter || device.brand === this.brandFilter) &&
+      (!this.areaFilter || device.area === this.areaFilter) &&
+      (!this.statusFilter || device.status === this.statusFilter) &&
+      (!q || Object.values(device).join(" ").toLowerCase().includes(q))
+    ).sort((a,b) => a.device_code-b.device_code);
   }
 
   openDeviceModal(device = null, isImport = false) {
@@ -243,15 +276,17 @@ class NetworkInventoryPanel extends HTMLElement {
     const brands = [...this.data.brands];
     if (device?.brand && !brands.some(brand => brand.toLowerCase() === device.brand.toLowerCase())) brands.push(device.brand);
     const brandOptions = brands.sort((a,b) => a.localeCompare(b)).map(brand => `<option value="${esc(brand)}" ${device?.brand === brand ? "selected" : ""}>${esc(brand)}</option>`).join("");
+    const areaOptions = this.data.areas.map(area => `<option value="${esc(area)}"></option>`).join("");
     const isEdit = Boolean(device && !isImport);
     const ipRequired = ["wifi", "ethernet"].includes(device?.protocol || "wifi");
     const modal = this.shadowRoot.querySelector("#modal");
     modal.innerHTML = `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><div><h2>${isEdit ? this.t("edit") : this.t("addDevice")}</h2><p>${isEdit ? `${this.t("code")}: ${device.device_code}` : this.t("autoId")}</p></div><button type="button" data-close><ha-icon icon="mdi:close"></ha-icon></button></div>
       <form id="device-form"><div class="form-grid">
+        ${isEdit ? `<label>${this.t("code")}<div class="id-field"><input name="device_code" value="${esc(device.device_code)}" readonly><button type="button" class="secondary" data-clear-id title="${this.t("clearId")}"><ha-icon icon="mdi:close"></ha-icon></button></div><small data-id-help></small></label>` : ""}
         ${field("name", this.t("name"), device?.name, true)}
         <label>${this.t("type")}<select name="device_type" required><option value=""></option>${types}</select></label>
         <label>${this.t("brand")}<select name="brand" required><option value=""></option>${brandOptions}</select></label>${field("model", this.t("model"), device?.model)}
-        ${field("area", this.t("area"), device?.area, true)}
+        <label>${this.t("area")}<input name="area" list="area-options" value="${esc(device?.area || "")}" required><datalist id="area-options">${areaOptions}</datalist></label>
         <label>${this.t("protocol")}<select name="protocol" required>${protocols}</select><small>${isEdit ? this.t("stableId") : ""}</small></label>
         ${field("mac", this.t("address"), device?.mac, true)}${field("ip_address", this.t("ip"), device?.ip_address, ipRequired)}
         ${field("device_identifier", this.t("identifier"), device?.device_identifier)}${field("entity_name", this.t("entityName"), device?.entity_name)}
@@ -263,6 +298,10 @@ class NetworkInventoryPanel extends HTMLElement {
     const protocolSelect = modal.querySelector("[name='protocol']");
     const ipInput = modal.querySelector("[name='ip_address']");
     protocolSelect.addEventListener("change", () => { ipInput.required = ["wifi", "ethernet"].includes(protocolSelect.value); });
+    modal.querySelector("[data-clear-id]")?.addEventListener("click", () => {
+      modal.querySelector("[name='device_code']").value = "";
+      modal.querySelector("[data-id-help]").textContent = this.t("newIdHelp");
+    });
     modal.querySelector("#device-form").addEventListener("submit", event => this.saveDevice(event, isEdit ? device : null, isImport ? device : null));
   }
 
@@ -393,15 +432,16 @@ function csvToDevices(text) {
 const BASE_CSS = `
   :host{display:block;min-height:100%;background:var(--primary-background-color);color:var(--primary-text-color);font-family:var(--paper-font-body1_-_font-family,system-ui,sans-serif)}
   *{box-sizing:border-box}button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer}.app{max-width:1500px;margin:auto;padding:24px 28px 60px}header{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}h1{font-size:28px;margin:0 0 3px;letter-spacing:-.4px}h2{font-size:18px;margin:0 0 18px}h3{font-size:15px;margin:0 0 5px}p{margin:0}header p,.section-head p,.muted{color:var(--secondary-text-color);font-size:13px}
+  .title-row{display:flex;align-items:center;gap:9px}.version{font-size:11px;font-weight:700;color:var(--secondary-text-color);border:1px solid var(--divider-color);border-radius:20px;padding:3px 7px}
   button{border:0;background:none}.primary,.secondary{height:42px;border-radius:10px;padding:0 15px;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:650;white-space:nowrap}.primary{background:var(--primary-color);color:#fff}.secondary{border:1px solid var(--divider-color);background:var(--card-background-color)}.compact{height:36px;padding:0 12px;font-size:13px}button:disabled{opacity:.55;cursor:wait}
   nav{display:flex;gap:5px;border-bottom:1px solid var(--divider-color);margin-bottom:24px;overflow:auto}.nav{padding:12px 15px;display:flex;align-items:center;gap:8px;color:var(--secondary-text-color);border-bottom:2px solid transparent;white-space:nowrap}.nav.active{color:var(--primary-color);border-color:var(--primary-color);font-weight:650}.nav b{font-size:11px;background:var(--primary-color);color:#fff;border-radius:20px;padding:2px 6px}
   .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}.stat,.card,.table-card,.import-card{background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:14px}.stat{padding:18px;display:flex;align-items:center;gap:14px}.stat-icon{width:44px;height:44px;border-radius:12px;display:grid;place-items:center}.stat-icon.blue{background:#dbeafe;color:#2563eb}.stat-icon.green{background:#d1fae5;color:#059669}.stat-icon.orange{background:#ffedd5;color:#ea580c}.stat-icon.purple{background:#ede9fe;color:#7c3aed}.stat span{display:block;font-size:12px;color:var(--secondary-text-color);margin-bottom:3px}.stat strong{font-size:24px}.grid-two{display:grid;grid-template-columns:1fr 1.3fr;gap:16px}.card{padding:20px}.protocol-list>div{display:grid;grid-template-columns:10px 90px 1fr 28px;align-items:center;gap:9px;margin:14px 0;font-size:13px}.dot{width:9px;height:9px;border-radius:50%}.bar{height:7px;background:var(--divider-color);border-radius:10px;overflow:hidden}.bar i{display:block;height:100%;border-radius:10px}.mini-list button{width:100%;display:grid;grid-template-columns:58px 1fr 24px;align-items:center;text-align:left;padding:10px 5px;border-bottom:1px solid var(--divider-color)}.mini-list button:last-child{border:0}.mini-list small,td small{display:block;color:var(--secondary-text-color);margin-top:3px}.code{font-family:ui-monospace,monospace;font-weight:750;color:var(--primary-color)}
-  .toolbar{display:flex;gap:10px;margin-bottom:14px;padding:12px}.search{flex:1;min-width:190px;display:flex;align-items:center;gap:8px;border:1px solid var(--divider-color);border-radius:9px;padding:0 11px}.search input{border:0;background:transparent;width:100%;outline:0;height:40px}select,input,textarea{border:1px solid var(--divider-color);background:var(--card-background-color);border-radius:8px;padding:10px;outline:none}select:focus,input:focus,textarea:focus{border-color:var(--primary-color);box-shadow:0 0 0 2px color-mix(in srgb,var(--primary-color) 18%,transparent)}.table-card{overflow:hidden}.table-scroll{overflow:auto}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;color:var(--secondary-text-color);font-size:11px;text-transform:uppercase;letter-spacing:.35px;background:var(--secondary-background-color);padding:12px}td{padding:12px;border-top:1px solid var(--divider-color);white-space:nowrap}.mono{font-family:ui-monospace,monospace;font-size:12px}.pill{display:inline-flex;border-radius:20px;padding:4px 9px;background:color-mix(in srgb,var(--pill) 14%,transparent);color:var(--pill);font-size:12px;font-weight:650}.row-actions{display:flex}.row-actions button,.modal-head button,.danger-icon{width:36px;height:36px;border-radius:8px;display:grid;place-items:center}.row-actions button:hover,.modal-head button:hover{background:var(--secondary-background-color)}.danger-icon{color:var(--error-color,#dc2626)}
+  .toolbar{display:flex;gap:10px;margin-bottom:10px;padding:12px}.filters{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr)) auto;gap:10px;margin-bottom:14px;padding:12px}.search{flex:1;min-width:190px;display:flex;align-items:center;gap:8px;border:1px solid var(--divider-color);border-radius:9px;padding:0 11px}.search input{border:0;background:transparent;width:100%;outline:0;height:40px}select,input,textarea{border:1px solid var(--divider-color);background:var(--card-background-color);border-radius:8px;padding:10px;outline:none}select:focus,input:focus,textarea:focus{border-color:var(--primary-color);box-shadow:0 0 0 2px color-mix(in srgb,var(--primary-color) 18%,transparent)}.table-card{overflow:hidden}.table-scroll{overflow:auto}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;color:var(--secondary-text-color);font-size:11px;text-transform:uppercase;letter-spacing:.35px;background:var(--secondary-background-color);padding:12px}td{padding:12px;border-top:1px solid var(--divider-color);white-space:nowrap}.mono{font-family:ui-monospace,monospace;font-size:12px}.pill{display:inline-flex;border-radius:20px;padding:4px 9px;background:color-mix(in srgb,var(--pill) 14%,transparent);color:var(--pill);font-size:12px;font-weight:650}.row-actions{display:flex}.row-actions button,.modal-head button,.danger-icon{width:36px;height:36px;border-radius:8px;display:grid;place-items:center}.row-actions button:hover,.modal-head button:hover{background:var(--secondary-background-color)}.danger-icon{color:var(--error-color,#dc2626)}
   .section-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}.section-head h2{margin:0 0 4px}.import-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.import-card{padding:15px;display:flex;align-items:center;gap:13px}.device-icon{width:42px;height:42px;border-radius:11px;background:var(--secondary-background-color);display:grid;place-items:center;color:var(--primary-color)}.grow{flex:1;min-width:0}.import-card p{font-size:12px;color:var(--secondary-text-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.meta{display:flex;gap:7px;margin-top:8px;align-items:center;flex-wrap:wrap}.meta>span:not(.pill){font-size:11px;color:var(--secondary-text-color)}.empty{padding:50px;text-align:center;color:var(--secondary-text-color)}.empty ha-icon{--mdc-icon-size:42px;margin-bottom:10px}.standalone{background:var(--card-background-color);border-radius:14px}
   .settings-card{margin-bottom:14px}.protocol-settings{display:grid;gap:10px}.protocol-setting{display:grid;grid-template-columns:1fr 1.3fr .7fr .7fr .55fr 40px;gap:10px;align-items:end;padding:12px;border:1px solid var(--divider-color);border-radius:10px}.protocol-setting label,.form-grid label{font-size:12px;color:var(--secondary-text-color);display:grid;gap:6px}.protocol-setting input{width:100%}.protocol-setting input[type=color]{height:41px;padding:5px}.settings-card textarea{width:100%;resize:vertical}.form-actions{display:flex;justify-content:flex-end}
-  .modal-backdrop{position:fixed;z-index:20;inset:0;background:#0008;display:grid;place-items:center;padding:18px}.modal{width:min(760px,100%);max-height:92vh;overflow:auto;background:var(--card-background-color);border-radius:16px;box-shadow:0 20px 70px #0006}.modal-head{padding:19px 21px;border-bottom:1px solid var(--divider-color);display:flex;justify-content:space-between}.modal-head h2{margin:0 0 4px}.modal-head p{font-size:12px;color:var(--secondary-text-color)}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:20px}.form-grid input,.form-grid select,.form-grid textarea{width:100%}.form-grid .full{grid-column:1/-1}.form-grid small{min-height:13px}.modal-actions{padding:15px 20px;border-top:1px solid var(--divider-color);display:flex;justify-content:flex-end;gap:9px}#toast{position:fixed;z-index:30;left:50%;bottom:30px;transform:translate(-50%,30px);background:#17202a;color:#fff;padding:11px 16px;border-radius:9px;opacity:0;pointer-events:none;transition:.2s}#toast.show{opacity:1;transform:translate(-50%,0)}#toast.error{background:var(--error-color,#c62828)}.state{min-height:70vh;display:flex;align-items:center;justify-content:center;gap:12px;color:var(--secondary-text-color)}.spinner{width:22px;height:22px;border:3px solid var(--divider-color);border-top-color:var(--primary-color);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
-  @media(max-width:900px){.stats{grid-template-columns:repeat(2,1fr)}.grid-two,.import-grid{grid-template-columns:1fr}.toolbar{flex-wrap:wrap}.search{flex-basis:100%}.protocol-setting{grid-template-columns:1fr 1fr 1fr}.protocol-setting .danger-icon{align-self:end}.app{padding:18px 14px 50px}}
-  @media(max-width:600px){header{align-items:flex-start}header h1{font-size:22px}header .primary{font-size:0;width:42px;padding:0}header .primary ha-icon{font-size:initial}.stats{gap:9px}.stat{padding:13px;gap:10px}.stat-icon{width:38px;height:38px}.stat strong{font-size:20px}.nav{padding:11px 12px}.nav span{font-size:12px}.toolbar .secondary{flex:1;font-size:12px;padding:0 8px}.form-grid{grid-template-columns:1fr}.form-grid .full{grid-column:auto}.protocol-setting{grid-template-columns:1fr 1fr}.import-card{align-items:flex-start}.import-card .primary{align-self:center}.section-head{align-items:flex-start}.section-head .secondary{font-size:0;width:42px;padding:0}.section-head .secondary ha-icon{font-size:initial}}
+  .modal-backdrop{position:fixed;z-index:20;inset:0;background:#0008;display:grid;place-items:center;padding:18px}.modal{width:min(760px,100%);max-height:92vh;overflow:auto;background:var(--card-background-color);border-radius:16px;box-shadow:0 20px 70px #0006}.modal-head{padding:19px 21px;border-bottom:1px solid var(--divider-color);display:flex;justify-content:space-between}.modal-head h2{margin:0 0 4px}.modal-head p{font-size:12px;color:var(--secondary-text-color)}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:20px}.form-grid input,.form-grid select,.form-grid textarea{width:100%}.form-grid .full{grid-column:1/-1}.form-grid small{min-height:13px}.id-field{display:grid;grid-template-columns:1fr 42px;gap:7px}.id-field button{width:42px;padding:0}.modal-actions{padding:15px 20px;border-top:1px solid var(--divider-color);display:flex;justify-content:flex-end;gap:9px}#toast{position:fixed;z-index:30;left:50%;bottom:30px;transform:translate(-50%,30px);background:#17202a;color:#fff;padding:11px 16px;border-radius:9px;opacity:0;pointer-events:none;transition:.2s}#toast.show{opacity:1;transform:translate(-50%,0)}#toast.error{background:var(--error-color,#c62828)}.state{min-height:70vh;display:flex;align-items:center;justify-content:center;gap:12px;color:var(--secondary-text-color)}.spinner{width:22px;height:22px;border:3px solid var(--divider-color);border-top-color:var(--primary-color);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+  @media(max-width:900px){.stats{grid-template-columns:repeat(2,1fr)}.grid-two,.import-grid{grid-template-columns:1fr}.toolbar{flex-wrap:wrap}.search{flex-basis:100%}.filters{grid-template-columns:repeat(2,minmax(0,1fr))}.protocol-setting{grid-template-columns:1fr 1fr 1fr}.protocol-setting .danger-icon{align-self:end}.app{padding:18px 14px 50px}}
+  @media(max-width:600px){header{align-items:flex-start}header h1{font-size:22px}header .primary{font-size:0;width:42px;padding:0}header .primary ha-icon{font-size:initial}.stats{gap:9px}.stat{padding:13px;gap:10px}.stat-icon{width:38px;height:38px}.stat strong{font-size:20px}.nav{padding:11px 12px}.nav span{font-size:12px}.toolbar .secondary{flex:1;font-size:12px;padding:0 8px}.filters{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.form-grid .full{grid-column:auto}.protocol-setting{grid-template-columns:1fr 1fr}.import-card{align-items:flex-start}.import-card .primary{align-self:center}.section-head{align-items:flex-start}.section-head .secondary{font-size:0;width:42px;padding:0}.section-head .secondary ha-icon{font-size:initial}}
 `;
 
 customElements.define("network-inventory-panel", NetworkInventoryPanel);

@@ -5,6 +5,8 @@ NAME = "Network Inventory"
 STORAGE_KEY = f"{DOMAIN}.data"
 STORAGE_VERSION = 1
 PANEL_URL = "/network_inventory_static"
+VERSION = "0.3.0"
+DEVICE_TYPES_VERSION = 2
 IP_PROTOCOLS = {"wifi", "ethernet"}
 
 DEFAULT_PROTOCOLS = {
@@ -20,17 +22,36 @@ DEFAULT_PROTOCOLS = {
 
 DEFAULT_DEVICE_TYPES = [
     "Access Point",
+    "Air Conditioner",
+    "Air Purifier",
+    "Appliance",
     "Bridge",
+    "Button",
     "Camera",
     "Computer",
     "Controller",
+    "Dehumidifier",
+    "Doorbell",
+    "Fan",
+    "Gateway",
+    "Humidifier",
     "Light",
+    "Lock",
     "Media Player",
     "Mobile",
+    "Plug",
+    "Printer",
+    "Relay",
     "Router",
     "Sensor",
     "Server",
+    "Siren",
+    "Speaker",
     "Switch",
     "Thermostat",
+    "TV",
+    "Vacuum",
+    "Valve",
+    "Watering Controller",
     "Other",
 ]

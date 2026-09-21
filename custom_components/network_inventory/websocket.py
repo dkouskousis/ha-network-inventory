@@ -14,7 +14,7 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from .const import DOMAIN
+from .const import DOMAIN, VERSION
 from .storage import InventoryError, InventoryStore, common_entity_name
 
 
@@ -43,6 +43,11 @@ async def websocket_list(
     """Return inventory data and importable HA devices."""
     data = await _manager(hass).async_snapshot()
     data["ha_devices"] = _home_assistant_devices(hass, data["devices"])
+    data["areas"] = sorted(
+        (area.name for area in ar.async_get(hass).async_list_areas()),
+        key=str.casefold,
+    )
+    data["version"] = VERSION
     connection.send_result(msg["id"], data)
 
 
@@ -277,7 +282,13 @@ def _guess_device_type(entity_ids: list[str]) -> str:
     domains = {entity_id.partition(".")[0] for entity_id in entity_ids}
     for domain, device_type in (
         ("camera", "Camera"),
+        ("vacuum", "Vacuum"),
+        ("humidifier", "Humidifier"),
+        ("fan", "Fan"),
         ("light", "Light"),
+        ("lock", "Lock"),
+        ("siren", "Siren"),
+        ("valve", "Valve"),
         ("switch", "Switch"),
         ("climate", "Thermostat"),
         ("media_player", "Media Player"),

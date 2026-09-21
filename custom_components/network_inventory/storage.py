@@ -14,6 +14,7 @@ from homeassistant.helpers.storage import Store
 from .const import (
     DEFAULT_DEVICE_TYPES,
     DEFAULT_PROTOCOLS,
+    DEVICE_TYPES_VERSION,
     IP_PROTOCOLS,
     STORAGE_KEY,
     STORAGE_VERSION,
@@ -51,10 +52,12 @@ class InventoryStore:
     async def async_load(self) -> None:
         """Load data and add defaults for new installations."""
         loaded = await self._store.async_load()
+        migrated = False
         self.data = loaded or {
             "devices": [],
             "protocols": deepcopy(DEFAULT_PROTOCOLS),
             "device_types": list(DEFAULT_DEVICE_TYPES),
+            "device_types_version": DEVICE_TYPES_VERSION,
             "brands": [],
             "counters": {
                 key: value["start"] - 1 for key, value in DEFAULT_PROTOCOLS.items()
@@ -63,6 +66,15 @@ class InventoryStore:
         self.data.setdefault("devices", [])
         self.data.setdefault("protocols", deepcopy(DEFAULT_PROTOCOLS))
         self.data.setdefault("device_types", list(DEFAULT_DEVICE_TYPES))
+        if self.data.get("device_types_version", 0) < DEVICE_TYPES_VERSION:
+            current_types = {item.casefold() for item in self.data["device_types"]}
+            self.data["device_types"].extend(
+                item
+                for item in DEFAULT_DEVICE_TYPES
+                if item.casefold() not in current_types
+            )
+            self.data["device_types_version"] = DEVICE_TYPES_VERSION
+            migrated = True
         self.data.setdefault(
             "brands",
             sorted(
@@ -77,6 +89,8 @@ class InventoryStore:
         self.data.setdefault("counters", {})
         for key, value in self.data["protocols"].items():
             self.data["counters"].setdefault(key, value["start"] - 1)
+        if migrated:
+            await self._store.async_save(self.data)
 
     async def async_snapshot(self) -> dict[str, Any]:
         """Return a safe copy of all stored data."""
@@ -109,10 +123,17 @@ class InventoryStore:
         """Update a device without changing its permanent device code."""
         async with self._lock:
             device = self._find(internal_id)
+            reset_device_code = (
+                "device_code" in payload and payload.get("device_code") in (None, "")
+            )
             updated = self._clean_device({**device, **payload})
             protected = {
                 "id": device["id"],
-                "device_code": device["device_code"],
+                "device_code": (
+                    self._next_device_code(updated["protocol"])
+                    if reset_device_code
+                    else device["device_code"]
+                ),
                 "created_at": device["created_at"],
             }
             device.clear()

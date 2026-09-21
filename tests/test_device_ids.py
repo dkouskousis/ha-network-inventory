@@ -98,6 +98,25 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
         second = await self.manager.async_add(device_payload("Two", "wifi"))
         self.assertEqual(second["device_code"], 1002)
 
+    async def test_clearing_id_assigns_next_id_for_new_protocol(self):
+        first = await self.manager.async_add(device_payload("Plug", "wifi"))
+        changed = await self.manager.async_update(
+            first["id"], {"protocol": "zigbee", "device_code": ""}
+        )
+        self.assertEqual(first["device_code"], 1001)
+        self.assertEqual(changed["device_code"], 2001)
+
+        next_wifi = await self.manager.async_add(device_payload("Router", "wifi"))
+        next_zigbee = await self.manager.async_add(
+            device_payload("Sensor", "zigbee")
+        )
+        self.assertEqual(next_wifi["device_code"], 1002)
+        self.assertEqual(next_zigbee["device_code"], 2002)
+
+    async def test_extended_device_types_are_available(self):
+        for device_type in ("Vacuum", "Humidifier", "Printer", "Relay", "Plug"):
+            self.assertIn(device_type, self.manager.data["device_types"])
+
     async def test_import_preserves_excel_code_and_advances_counter(self):
         result = await self.manager.async_import(
             [device_payload("Existing sensor", "zigbee", device_code=2014)]

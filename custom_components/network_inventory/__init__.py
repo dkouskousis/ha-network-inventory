@@ -37,7 +37,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             webcomponent_name="network-inventory-panel",
             sidebar_title=NAME,
             sidebar_icon="mdi:lan",
-            module_url=f"{PANEL_URL}/network-inventory-panel.js?v=0.2.0",
+            module_url=f"{PANEL_URL}/network-inventory-panel.js?v=0.3.0",
             require_admin=True,
             handle_safe_area=True,
         )

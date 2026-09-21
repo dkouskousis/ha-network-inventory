@@ -12,6 +12,9 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - Configurable brand list with automatic additions during import
 - Import and export compatible CSV files
 - Search and protocol filters
+- Detailed filters for protocol, type, brand, area, and status
+- Home Assistant area suggestions with support for custom areas
+- Optional Device ID reassignment after a protocol change
 - Responsive desktop and mobile interface
 - English and Greek UI
 - Data included in Home Assistant backups
