@@ -335,7 +335,7 @@ async def websocket_niimbot_print(
     width = round(float(settings["label_width_mm"]) * pixels_per_mm)
     height = round(float(settings["label_height_mm"]) * pixels_per_mm)
     margin = round(float(settings["margin_mm"]) * pixels_per_mm)
-    top_compensation = round(1.0 * pixels_per_mm)
+    top_compensation = round(0.5 * pixels_per_mm)
     content_y = margin + top_compensation
     content_width = width - (margin * 2)
     content_height = height - content_y - margin
@@ -361,14 +361,14 @@ async def websocket_niimbot_print(
                 "value": f"ID {device['device_code']}  |  {protocol}",
                 "x": margin,
                 "y": content_y + name_height,
-                "size": 25,
+                "size": 27,
             },
             {
                 "type": "text",
                 "value": device["mac"],
                 "x": margin,
                 "y": content_y + name_height + detail_height,
-                "size": 20,
+                "size": 22,
             },
         ],
         "rotate": 90,
