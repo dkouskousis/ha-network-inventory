@@ -373,7 +373,7 @@ async def websocket_niimbot_print(
                 "value": device["mac"],
                 "x": margin,
                 "y": content_y + name_height + detail_height,
-                "size": 22,
+                "size": 25,
             },
         ],
         "rotate": 90,
