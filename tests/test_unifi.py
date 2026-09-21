@@ -96,6 +96,18 @@ class UniFiTests(unittest.TestCase):
         self.assertEqual(result["site_id"], network_site["id"])
         self.assertEqual(result["name"], "Home")
 
+    def test_site_manager_choice_does_not_contact_console(self):
+        choice = unifi.UniFiCloudManager._manager_site_choice(
+            {
+                "siteId": "661de833b6b2463f0c20b319",
+                "hostId": "console-1",
+                "meta": {"name": "default", "desc": "Home"},
+            }
+        )
+        self.assertEqual(choice["host_id"], "console-1")
+        self.assertEqual(choice["site_id"], "661de833b6b2463f0c20b319")
+        self.assertEqual(choice["name"], "Home")
+
 
 if __name__ == "__main__":
     unittest.main()

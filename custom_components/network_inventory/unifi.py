@@ -111,37 +111,42 @@ class UniFiCloudManager:
             if not manager_sites:
                 raise UniFiError("No UniFi Network sites are available for this API key")
 
-            host_ids = sorted(
-                {
-                    str(site.get("hostId") or "")
-                    for site in manager_sites
-                    if site.get("hostId")
-                }
-            )
-            choices: list[dict[str, str]] = []
-            for current_host_id in host_ids:
-                base = CONNECTOR_URL.format(host=quote(current_host_id, safe=""))
-                network_sites = await self._network_page(base, key, "/v1/sites")
-                choices.extend(
-                    self._network_site_choice(
-                        current_host_id, network_site, manager_sites
-                    )
-                    for network_site in network_sites
-                )
-            if not choices:
-                raise UniFiError(
-                    "The selected UniFi consoles did not return any Network sites"
-                )
-            selected = next(
+            choices = [self._manager_site_choice(item) for item in manager_sites]
+            manager_site = next(
                 (
                     item
-                    for item in choices
-                    if item["host_id"] == host_id and item["site_id"] == site_id
+                    for item in manager_sites
+                    if str(item.get("hostId") or "") == host_id
+                    and str(item.get("siteId") or "") == site_id
                 ),
                 None,
             )
-            if selected is None and len(choices) == 1:
-                selected = choices[0]
+            selected = None
+            if manager_site:
+                base = CONNECTOR_URL.format(host=quote(host_id, safe=""))
+                network_sites = await self._network_page(base, key, "/v1/sites")
+                meta = (
+                    manager_site.get("meta")
+                    if isinstance(manager_site.get("meta"), dict)
+                    else {}
+                )
+                internal_reference = str(meta.get("name") or "")
+                network_site = next(
+                    (
+                        item
+                        for item in network_sites
+                        if str(item.get("internalReference") or "")
+                        == internal_reference
+                    ),
+                    None,
+                )
+                if network_site is None:
+                    raise UniFiError(
+                        "The selected site was not returned by its UniFi Network application"
+                    )
+                selected = self._network_site_choice(
+                    host_id, network_site, manager_sites
+                )
 
             self.data["api_key"] = key
             self.data["available_sites"] = choices
@@ -272,6 +277,16 @@ class UniFiCloudManager:
         except (ClientError, TimeoutError, ValueError) as err:
             raise UniFiError(f"Could not contact UniFi Cloud: {err}") from err
         return results
+
+    @staticmethod
+    def _manager_site_choice(site: dict[str, Any]) -> dict[str, str]:
+        meta = site.get("meta") if isinstance(site.get("meta"), dict) else {}
+        return {
+            "host_id": str(site.get("hostId") or ""),
+            "site_id": str(site.get("siteId") or ""),
+            "name": str(meta.get("desc") or meta.get("name") or "Site"),
+            "gateway_mac": str(meta.get("gatewayMac") or ""),
+        }
 
     @staticmethod
     def _network_site_choice(
