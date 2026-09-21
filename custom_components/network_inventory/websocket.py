@@ -16,6 +16,7 @@ from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN, VERSION
 from .storage import InventoryError, InventoryStore, common_entity_name
+from .unifi import UniFiCloudManager, UniFiError, match_unifi_items
 
 
 def async_register_commands(hass: HomeAssistant) -> None:
@@ -26,10 +27,17 @@ def async_register_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_delete)
     websocket_api.async_register_command(hass, websocket_import)
     websocket_api.async_register_command(hass, websocket_settings)
+    websocket_api.async_register_command(hass, websocket_unifi_connect)
+    websocket_api.async_register_command(hass, websocket_unifi_disconnect)
+    websocket_api.async_register_command(hass, websocket_unifi_refresh)
 
 
 def _manager(hass: HomeAssistant) -> InventoryStore:
     return hass.data[DOMAIN]["manager"]
+
+
+def _unifi(hass: HomeAssistant) -> UniFiCloudManager:
+    return hass.data[DOMAIN]["unifi"]
 
 
 @websocket_api.websocket_command({"type": f"{DOMAIN}/list"})
@@ -42,6 +50,11 @@ async def websocket_list(
 ) -> None:
     """Return inventory data and importable HA devices."""
     data = await _manager(hass).async_snapshot()
+    await _unifi(hass).async_ensure_loaded()
+    unifi_matches, unifi_items = match_unifi_items(data["devices"], _unifi(hass).items)
+    data["integrations"] = {"unifi": _unifi(hass).status()}
+    data["unifi_items"] = unifi_items
+    data["unifi_matches"] = unifi_matches
     data["ha_devices"] = _home_assistant_devices(hass, data["devices"])
     data["areas"] = sorted(
         (area.name for area in ar.async_get(hass).async_list_areas()),
@@ -150,6 +163,62 @@ async def websocket_import(
         connection.send_error(msg["id"], "invalid_import", str(err))
         return
     connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/unifi/connect",
+        vol.Optional("api_key"): str,
+        vol.Optional("host_id", default=""): str,
+        vol.Optional("site_id", default=""): str,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_unifi_connect(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Validate UniFi Cloud credentials and select a site."""
+    try:
+        result = await _unifi(hass).async_connect(
+            msg.get("api_key"), msg.get("host_id", ""), msg.get("site_id", "")
+        )
+    except UniFiError as err:
+        connection.send_error(msg["id"], "unifi_error", str(err))
+        return
+    connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command({"type": f"{DOMAIN}/unifi/disconnect"})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_unifi_disconnect(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Disconnect UniFi Cloud and erase its API key."""
+    await _unifi(hass).async_disconnect()
+    connection.send_result(msg["id"], {})
+
+
+@websocket_api.websocket_command({"type": f"{DOMAIN}/unifi/refresh"})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_unifi_refresh(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Refresh clients and infrastructure from UniFi Cloud."""
+    try:
+        await _unifi(hass).async_refresh()
+    except UniFiError as err:
+        connection.send_error(msg["id"], "unifi_error", str(err))
+        return
+    connection.send_result(msg["id"], _unifi(hass).status())
 
 
 @websocket_api.websocket_command(

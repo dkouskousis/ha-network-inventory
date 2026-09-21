@@ -165,9 +165,17 @@ class InventoryStore:
                 for device in self.data["devices"]
                 if device.get("ha_device_id")
             }
+            existing_unifi_ids = {
+                device.get("unifi_id")
+                for device in self.data["devices"]
+                if device.get("unifi_id")
+            }
 
             for payload in rows:
                 if payload.get("ha_device_id") in existing_ha_ids:
+                    skipped += 1
+                    continue
+                if payload.get("unifi_id") in existing_unifi_ids:
                     skipped += 1
                     continue
                 device = self._clean_device(payload)
@@ -204,6 +212,8 @@ class InventoryStore:
                 existing_codes.add(device_code)
                 if device.get("ha_device_id"):
                     existing_ha_ids.add(device["ha_device_id"])
+                if device.get("unifi_id"):
+                    existing_unifi_ids.add(device["unifi_id"])
                 imported += 1
 
             await self._store.async_save(self.data)
@@ -330,6 +340,9 @@ class InventoryStore:
             "status",
             "ha_device_id",
             "integration",
+            "unifi_id",
+            "unifi_kind",
+            "unifi_site_id",
         )
         cleaned = {
             key: str(payload.get(key, "") or "").strip()[:1000] for key in allowed

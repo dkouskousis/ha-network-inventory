@@ -8,6 +8,9 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - Separate configurable number range for each protocol
 - Manual device management
 - Import from the Home Assistant Device Registry
+- Official UniFi Cloud integration for connected clients and adopted network devices
+- One-click review before adding a UniFi client to the inventory
+- UniFi badges and live uplink/AP details for matching stored devices
 - Review imported devices in a pre-filled form before saving
 - Configurable brand list with automatic additions during import
 - Import and export compatible CSV files
@@ -65,4 +68,10 @@ Area, Device Name, Device ID, Entity Name, Comments, Protocol
 
 ## Storage and privacy
 
-Inventory data is stored locally in Home Assistant's private `.storage` directory. The panel and its WebSocket commands require an administrator account. Passwords and credentials are intentionally not supported as inventory fields.
+Inventory data is stored locally in Home Assistant's private `.storage` directory. The panel and its WebSocket commands require an administrator account. The UniFi API key is kept in a separate private Home Assistant Store and is never returned to the browser after submission.
+
+## UniFi Cloud
+
+Open **Network Inventory → Integrations**, create a read-only API key at [UniFi Site Manager](https://unifi.ui.com/settings/api-keys), and paste it into the UniFi Cloud card. If the account contains more than one site, select the Dream Machine site to activate. The UniFi tab then lists connected clients and adopted UniFi infrastructure. Matching with inventory devices uses the MAC address.
+
+The official UniFi Network API returns currently connected clients. Offline UniFi infrastructure remains visible through the adopted-devices endpoint, while disconnected client devices are not included until they reconnect.
