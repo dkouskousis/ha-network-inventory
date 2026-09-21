@@ -66,6 +66,7 @@ class InventoryStore:
         self.data.setdefault("devices", [])
         self.data.setdefault("protocols", deepcopy(DEFAULT_PROTOCOLS))
         self.data.setdefault("device_types", list(DEFAULT_DEVICE_TYPES))
+        self.data.setdefault("niimbot", {"device_id": ""})
         if self.data.get("device_types_version", 0) < DEVICE_TYPES_VERSION:
             current_types = {item.casefold() for item in self.data["device_types"]}
             self.data["device_types"].extend(
@@ -95,6 +96,13 @@ class InventoryStore:
     async def async_snapshot(self) -> dict[str, Any]:
         """Return a safe copy of all stored data."""
         return deepcopy(self.data)
+
+    async def async_save_niimbot(self, device_id: str) -> dict[str, str]:
+        """Save the Home Assistant device used for label printing."""
+        async with self._lock:
+            self.data["niimbot"] = {"device_id": str(device_id).strip()}
+            await self._store.async_save(self.data)
+            return deepcopy(self.data["niimbot"])
 
     async def async_add(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Create a device and assign its permanent device code."""

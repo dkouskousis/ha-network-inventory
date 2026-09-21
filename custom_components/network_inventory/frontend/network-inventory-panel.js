@@ -26,7 +26,10 @@ const TEXT = {
     allIpIssues: "All IP checks", ipMismatch: "Inventory / UniFi mismatch", duplicateIp: "Duplicate IP",
     unifiIp: "UniFi IP", inventoryIp: "Inventory IP", updateInventoryIp: "Update Inventory IP", addInventoryIp: "Add IP to Inventory",
     openUnifi: "Open in UniFi", lastRefresh: "Last refresh", sharedWith: "Also assigned to", ipUpdated: "Inventory IP updated",
-    confirmIpUpdate: "Update the Inventory IP", missingIp: "No Inventory IP"
+    confirmIpUpdate: "Update the Inventory IP", missingIp: "No Inventory IP", niimbot: "NIIMBOT label printer",
+    niimbotHelp: "Use the NIIMBOT printer configured in Home Assistant to print device labels.", selectPrinter: "Select printer",
+    printerReady: "Printer ready", printerMissing: "NIIMBOT is not configured in Home Assistant", printLabel: "Print label",
+    confirmPrint: "Print a label for this device?", printed: "Label sent to printer"
   },
   el: {
     title: "Καταγραφή Συσκευών", overview: "Επισκόπηση", devices: "Συσκευές", homeAssistant: "Home Assistant",
@@ -55,7 +58,10 @@ const TEXT = {
     allIpIssues: "Όλοι οι έλεγχοι IP", ipMismatch: "Διαφορά Inventory / UniFi", duplicateIp: "Διπλότυπη IP",
     unifiIp: "IP στο UniFi", inventoryIp: "IP στο Inventory", updateInventoryIp: "Ενημέρωση IP στο Inventory", addInventoryIp: "Προσθήκη IP στο Inventory",
     openUnifi: "Άνοιγμα στο UniFi", lastRefresh: "Τελευταία ανανέωση", sharedWith: "Χρησιμοποιείται επίσης από", ipUpdated: "Η IP στο Inventory ενημερώθηκε",
-    confirmIpUpdate: "Να ενημερωθεί η IP στο Inventory", missingIp: "Χωρίς IP στο Inventory"
+    confirmIpUpdate: "Να ενημερωθεί η IP στο Inventory", missingIp: "Χωρίς IP στο Inventory", niimbot: "Εκτυπωτής ετικετών NIIMBOT",
+    niimbotHelp: "Χρησιμοποίησε τον NIIMBOT που έχει ρυθμιστεί στο Home Assistant για εκτύπωση ετικετών συσκευών.", selectPrinter: "Επιλογή εκτυπωτή",
+    printerReady: "Ο εκτυπωτής είναι έτοιμος", printerMissing: "Το NIIMBOT δεν έχει ρυθμιστεί στο Home Assistant", printLabel: "Εκτύπωση label",
+    confirmPrint: "Να εκτυπωθεί label για αυτή τη συσκευή;", printed: "Το label στάλθηκε στον εκτυπωτή"
   }
 };
 
@@ -218,7 +224,7 @@ class NetworkInventoryPanel extends HTMLElement {
       <td>${esc(d.device_type)}</td><td>${esc(d.brand)}</td><td>${esc(d.area)}</td>
       <td class="mono">${esc(d.mac)}</td><td class="mono ip-cell"><span>${esc(d.ip_address || "—")}</span>${mismatch ? `<small class="ip-warning">${this.t("unifiIp")}: ${esc(unifi.ip_address)} <button data-sync-ip="${esc(d.id)}" title="${this.t(d.ip_address ? "updateInventoryIp" : "addInventoryIp")}"><ha-icon icon="mdi:sync"></ha-icon></button></small>` : ""}${duplicates.length ? `<small class="duplicate-warning" title="${esc(duplicateText)}"><ha-icon icon="mdi:alert-circle-outline"></ha-icon>${this.t("sharedWith")}: ${esc(duplicateText)}</small>` : ""}</td><td class="mono">${esc(d.entity_name)}</td>
       <td><span class="pill" style="--pill:${safeColor(protocol.color)}">${esc(protocol.label)}</span></td>
-      <td><div class="row-actions">${unifi ? `<a href="https://unifi.ui.com" target="_blank" rel="noopener noreferrer" title="${this.t("openUnifi")}"><ha-icon icon="mdi:open-in-new"></ha-icon></a>` : ""}<button title="${this.t("edit")}" data-edit="${d.id}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="danger-icon" title="${this.t("delete")}" data-delete="${d.id}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div></td>
+      <td><div class="row-actions">${this.data.integrations?.niimbot?.connected ? `<button title="${this.t("printLabel")}" data-print-label="${esc(d.id)}"><ha-icon icon="mdi:printer-outline"></ha-icon></button>` : ""}${unifi ? `<a href="https://unifi.ui.com" target="_blank" rel="noopener noreferrer" title="${this.t("openUnifi")}"><ha-icon icon="mdi:open-in-new"></ha-icon></a>` : ""}<button title="${this.t("edit")}" data-edit="${d.id}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="danger-icon" title="${this.t("delete")}" data-delete="${d.id}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div></td>
     </tr>`;
   }
 
@@ -233,7 +239,9 @@ class NetworkInventoryPanel extends HTMLElement {
 
   renderIntegrations() {
     const state = this.data.integrations?.unifi || {};
+    const niimbot = this.data.integrations?.niimbot || {};
     const options = (state.available_sites || []).map(site => `<option value="${esc(`${site.host_id}|${site.site_id}`)}">${esc(site.name)} · ${esc(site.gateway_mac || site.site_id)}</option>`).join("");
+    const printerOptions = (niimbot.printers || []).map(printer => `<option value="${esc(printer.device_id)}" ${niimbot.device_id === printer.device_id ? "selected" : ""}>${esc(printer.name)}${printer.model ? ` · ${esc(printer.model)}` : ""}</option>`).join("");
     return `<section class="section-head"><div><h2>${this.t("integrations")}</h2><p>${this.t("unifiHelp")}</p></div></section>
       <article class="card integration-card">
         <div class="integration-logo"><ha-icon icon="mdi:access-point-network"></ha-icon></div>
@@ -245,6 +253,13 @@ class NetworkInventoryPanel extends HTMLElement {
           <a class="doc-link" href="https://unifi.ui.com/settings/api-keys" target="_blank" rel="noopener noreferrer">${this.t("createKey")} <ha-icon icon="mdi:open-in-new"></ha-icon></a>
         </div>
         ${state.connected ? `<div class="integration-actions"><button class="secondary" data-action="unifi-refresh"><ha-icon icon="mdi:refresh"></ha-icon>${this.t("refresh")}</button><button class="secondary danger-text" data-action="unifi-disconnect"><ha-icon icon="mdi:link-off"></ha-icon>${this.t("disconnect")}</button></div>` : state.configured ? `<button class="secondary danger-text" data-action="unifi-disconnect"><ha-icon icon="mdi:delete-outline"></ha-icon>${this.t("disconnect")}</button>` : ""}
+      </article>
+      <article class="card integration-card integration-gap">
+        <div class="integration-logo niimbot-logo"><ha-icon icon="mdi:printer-outline"></ha-icon></div>
+        <div class="grow"><div class="integration-title"><h2>${this.t("niimbot")}</h2><span class="status-dot ${niimbot.connected ? "ok" : ""}">${niimbot.connected ? this.t("printerReady") : this.t("notConnected")}</span></div>
+          <p class="muted">${niimbot.installed ? this.t("niimbotHelp") : this.t("printerMissing")}</p>
+          ${niimbot.installed && printerOptions ? `<form id="niimbot-form" class="inline-form"><label>${this.t("selectPrinter")}<select name="device_id" required><option value=""></option>${printerOptions}</select></label><button class="primary" type="submit">${this.t("save")}</button></form>` : ""}
+        </div>
       </article>`;
   }
 
@@ -309,8 +324,10 @@ class NetworkInventoryPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll("[data-unifi-details]").forEach(button => button.addEventListener("click", () => this.openUnifiDetails(this.data.unifi_matches[button.dataset.unifiDetails])));
     this.shadowRoot.querySelectorAll("[data-unifi-details-inventory]").forEach(button => button.addEventListener("click", () => this.openUnifiDetails(this.data.unifi_matches[button.dataset.unifiDetailsInventory])));
     this.shadowRoot.querySelectorAll("[data-sync-ip]").forEach(button => button.addEventListener("click", () => this.updateInventoryIp(button.dataset.syncIp)));
+    this.shadowRoot.querySelectorAll("[data-print-label]").forEach(button => button.addEventListener("click", () => this.printLabel(button.dataset.printLabel, button)));
     this.shadowRoot.querySelector("#unifi-connect-form")?.addEventListener("submit", event => this.connectUnifi(event));
     this.shadowRoot.querySelector("#unifi-site-form")?.addEventListener("submit", event => this.selectUnifiSite(event));
+    this.shadowRoot.querySelector("#niimbot-form")?.addEventListener("submit", event => this.configureNiimbot(event));
     this.shadowRoot.querySelectorAll("[data-action='unifi-refresh']").forEach(button => button.addEventListener("click", () => this.refreshUnifi(button)));
     this.shadowRoot.querySelectorAll("[data-action='unifi-disconnect']").forEach(button => button.addEventListener("click", () => this.disconnectUnifi(button)));
     this.shadowRoot.querySelector("[data-action='add-protocol']")?.addEventListener("click", () => this.addProtocolRow());
@@ -327,6 +344,7 @@ class NetworkInventoryPanel extends HTMLElement {
     tbody.querySelectorAll("[data-delete]").forEach(b => b.addEventListener("click", () => this.deleteDevice(b.dataset.delete)));
     tbody.querySelectorAll("[data-unifi-details]").forEach(b => b.addEventListener("click", () => this.openUnifiDetails(this.data.unifi_matches[b.dataset.unifiDetails])));
     tbody.querySelectorAll("[data-sync-ip]").forEach(b => b.addEventListener("click", () => this.updateInventoryIp(b.dataset.syncIp)));
+    tbody.querySelectorAll("[data-print-label]").forEach(b => b.addEventListener("click", () => this.printLabel(b.dataset.printLabel, b)));
   }
 
   unifiImportDevice(item) {
@@ -381,6 +399,29 @@ class NetworkInventoryPanel extends HTMLElement {
       this.view = "integrations";
       await this.reload(this.t("saved"));
     } catch (error) { this.toast(error?.message || this.t("error"), true); button.disabled = false; }
+  }
+
+  async configureNiimbot(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const device_id = String(new FormData(form).get("device_id") || "");
+    if (!device_id) return;
+    this.setBusy(form, true);
+    try {
+      await this._hass.callWS({ type: "network_inventory/niimbot/configure", device_id });
+      await this.reload(this.t("saved"));
+    } catch (error) { this.toast(error?.message || this.t("error"), true); this.setBusy(form, false); }
+  }
+
+  async printLabel(deviceId, button) {
+    const device = this.data.devices.find(item => item.id === deviceId);
+    if (!device || !confirm(`${this.t("confirmPrint")}\n${device.name} · ID ${device.device_code}`)) return;
+    button.disabled = true;
+    try {
+      await this._hass.callWS({ type: "network_inventory/niimbot/print", device_id: deviceId });
+      this.toast(this.t("printed"));
+    } catch (error) { this.toast(error?.message || this.t("error"), true); }
+    finally { button.disabled = false; }
   }
 
   openUnifiDetails(item) {
@@ -600,6 +641,7 @@ function csvToDevices(text) {
 }
 
 const BASE_CSS = `
+  .integration-gap{margin-top:14px}.niimbot-logo{background:#f3e8ff!important;color:#7e22ce!important}
   :host{display:block;min-height:100%;background:var(--primary-background-color);color:var(--primary-text-color);font-family:var(--paper-font-body1_-_font-family,system-ui,sans-serif)}
   *{box-sizing:border-box}button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer}.app{max-width:1500px;margin:auto;padding:24px 28px 60px}header{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}h1{font-size:28px;margin:0 0 3px;letter-spacing:-.4px}h2{font-size:18px;margin:0 0 18px}h3{font-size:15px;margin:0 0 5px}p{margin:0}header p,.section-head p,.muted{color:var(--secondary-text-color);font-size:13px}
   .title-row{display:flex;align-items:center;gap:9px}.version{font-size:11px;font-weight:700;color:var(--secondary-text-color);border:1px solid var(--divider-color);border-radius:20px;padding:3px 7px}

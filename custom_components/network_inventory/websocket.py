@@ -10,6 +10,7 @@ import voluptuous as vol
 
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -30,6 +31,8 @@ def async_register_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_unifi_connect)
     websocket_api.async_register_command(hass, websocket_unifi_disconnect)
     websocket_api.async_register_command(hass, websocket_unifi_refresh)
+    websocket_api.async_register_command(hass, websocket_niimbot_configure)
+    websocket_api.async_register_command(hass, websocket_niimbot_print)
 
 
 def _manager(hass: HomeAssistant) -> InventoryStore:
@@ -38,6 +41,38 @@ def _manager(hass: HomeAssistant) -> InventoryStore:
 
 def _unifi(hass: HomeAssistant) -> UniFiCloudManager:
     return hass.data[DOMAIN]["unifi"]
+
+
+@callback
+def _niimbot_printers(hass: HomeAssistant) -> list[dict[str, str]]:
+    """Return NIIMBOT devices already configured in Home Assistant."""
+    registry = dr.async_get(hass)
+    entry_ids = {entry.entry_id for entry in hass.config_entries.async_entries("niimbot")}
+    printers = [
+        {
+            "device_id": device.id,
+            "name": device.name_by_user or device.name or device.model or "NIIMBOT",
+            "model": device.model or "",
+        }
+        for device in registry.devices.values()
+        if entry_ids.intersection(device.config_entries)
+    ]
+    return sorted(printers, key=lambda item: item["name"].casefold())
+
+
+@callback
+def _niimbot_status(
+    hass: HomeAssistant, settings: dict[str, Any]
+) -> dict[str, Any]:
+    """Return NIIMBOT availability and the selected printer."""
+    printers = _niimbot_printers(hass)
+    selected = str(settings.get("device_id") or "")
+    return {
+        "installed": bool(hass.config_entries.async_entries("niimbot")),
+        "printers": printers,
+        "device_id": selected,
+        "connected": bool(selected and any(item["device_id"] == selected for item in printers)),
+    }
 
 
 @websocket_api.websocket_command({"type": f"{DOMAIN}/list"})
@@ -52,7 +87,10 @@ async def websocket_list(
     data = await _manager(hass).async_snapshot()
     await _unifi(hass).async_ensure_loaded()
     unifi_matches, unifi_items = match_unifi_items(data["devices"], _unifi(hass).items)
-    data["integrations"] = {"unifi": _unifi(hass).status()}
+    data["integrations"] = {
+        "unifi": _unifi(hass).status(),
+        "niimbot": _niimbot_status(hass, data.get("niimbot", {})),
+    }
     data["unifi_items"] = unifi_items
     data["unifi_matches"] = unifi_matches
     data["ha_devices"] = _home_assistant_devices(hass, data["devices"])
@@ -219,6 +257,101 @@ async def websocket_unifi_refresh(
         connection.send_error(msg["id"], "unifi_error", str(err))
         return
     connection.send_result(msg["id"], _unifi(hass).status())
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/niimbot/configure",
+        vol.Required("device_id"): str,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_niimbot_configure(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Select the Home Assistant NIIMBOT printer."""
+    printers = {item["device_id"] for item in _niimbot_printers(hass)}
+    if msg["device_id"] not in printers:
+        connection.send_error(msg["id"], "niimbot_error", "NIIMBOT printer not found")
+        return
+    await _manager(hass).async_save_niimbot(msg["device_id"])
+    connection.send_result(msg["id"], {"device_id": msg["device_id"]})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/niimbot/print",
+        vol.Required("device_id"): str,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_niimbot_print(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Print a temporary D11H inventory label."""
+    data = await _manager(hass).async_snapshot()
+    printer_id = str(data.get("niimbot", {}).get("device_id") or "")
+    device = next(
+        (item for item in data["devices"] if item["id"] == msg["device_id"]),
+        None,
+    )
+    if not printer_id or printer_id not in {
+        item["device_id"] for item in _niimbot_printers(hass)
+    }:
+        connection.send_error(msg["id"], "niimbot_error", "Select a NIIMBOT printer first")
+        return
+    if device is None:
+        connection.send_error(msg["id"], "niimbot_error", "Inventory device not found")
+        return
+    if not hass.services.has_service("niimbot", "print"):
+        connection.send_error(msg["id"], "niimbot_error", "NIIMBOT print service is unavailable")
+        return
+
+    service_data = {
+        "payload": [
+            {
+                "type": "new_multiline",
+                "value": device["name"],
+                "x": 8,
+                "y": 6,
+                "width": 338,
+                "height": 105,
+                "size": 42,
+                "fit": True,
+            },
+            {
+                "type": "text",
+                "value": f"ID: {device['device_code']}",
+                "x": 8,
+                "y": 120,
+                "size": 34,
+            },
+        ],
+        "rotate": 90,
+        "width": 354,
+        "height": 178,
+        "density": 3,
+        "label_type": 1,
+        "copies": 1,
+    }
+    try:
+        await hass.services.async_call(
+            "niimbot",
+            "print",
+            service_data,
+            blocking=True,
+            target={"device_id": printer_id},
+        )
+    except HomeAssistantError as err:
+        connection.send_error(msg["id"], "niimbot_error", str(err))
+        return
+    connection.send_result(msg["id"], {"printed": True})
 
 
 @websocket_api.websocket_command(

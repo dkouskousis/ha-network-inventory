@@ -14,6 +14,7 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - Inventory/UniFi IP mismatch warnings with confirmed one-click Inventory updates
 - Duplicate IP detection and filtering, including the conflicting device names
 - Open matching devices in the UniFi portal and display the last UniFi refresh time
+- Optional NIIMBOT integration with per-device D11H label printing
 - Review imported devices in a pre-filled form before saving
 - Configurable brand list with automatic additions during import
 - Import and export compatible CSV files
