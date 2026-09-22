@@ -14,6 +14,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import label_registry as lr
 
 from .const import DOMAIN, VERSION
 from .storage import InventoryError, InventoryStore, common_entity_name
@@ -93,6 +94,7 @@ async def websocket_list(
     msg: dict[str, Any],
 ) -> None:
     """Return inventory data and importable HA devices."""
+    await async_sync_labels_from_home_assistant(hass)
     data = await _manager(hass).async_snapshot()
     await _unifi(hass).async_ensure_loaded()
     unifi_matches, unifi_items = match_unifi_items(data["devices"], _unifi(hass).items)
@@ -160,6 +162,7 @@ async def websocket_add(
         if not isinstance(msg.get("device"), dict):
             raise InventoryError("Device data is required")
         device = await _manager(hass).async_add(msg["device"])
+        _push_device_labels_to_home_assistant(hass, device)
     except InventoryError as err:
         connection.send_error(msg["id"], "invalid_device", str(err))
         return
@@ -187,6 +190,7 @@ async def websocket_update(
         ):
             raise InventoryError("Device ID and device data are required")
         device = await _manager(hass).async_update(msg["device_id"], msg["device"])
+        _push_device_labels_to_home_assistant(hass, device)
     except InventoryError as err:
         connection.send_error(msg["id"], "invalid_device", str(err))
         return
@@ -224,8 +228,8 @@ async def websocket_battery_replaced(
         vol.Required("type"): f"{DOMAIN}/bulk_update",
         vol.Required("device_ids"): [str],
         vol.Required("fields"): dict,
-        vol.Optional("tag_mode", default=""): str,
-        vol.Optional("tags", default=[]): [str],
+        vol.Optional("label_mode", default=""): str,
+        vol.Optional("labels", default=[]): [str],
     }
 )
 @websocket_api.require_admin
@@ -238,8 +242,12 @@ async def websocket_bulk_update(
     """Update selected fields on multiple inventory devices."""
     try:
         result = await _manager(hass).async_bulk_update(
-            msg["device_ids"], msg["fields"], msg["tag_mode"], msg["tags"]
+            msg["device_ids"], msg["fields"], msg["label_mode"], msg["labels"]
         )
+        data = await _manager(hass).async_snapshot()
+        for device in data["devices"]:
+            if device["id"] in msg["device_ids"]:
+                _push_device_labels_to_home_assistant(hass, device)
     except InventoryError as err:
         connection.send_error(msg["id"], "invalid_bulk_update", str(err))
         return
@@ -290,6 +298,9 @@ async def websocket_import(
         ):
             raise InventoryError("A device list is required")
         result = await _manager(hass).async_import(msg["devices"])
+        data = await _manager(hass).async_snapshot()
+        for device in data["devices"]:
+            _push_device_labels_to_home_assistant(hass, device)
     except InventoryError as err:
         connection.send_error(msg["id"], "invalid_import", str(err))
         return
@@ -321,6 +332,8 @@ async def websocket_restore(
     """Restore a portable JSON backup."""
     try:
         result = await _manager(hass).async_restore(msg["backup"])
+        for device in result["devices"]:
+            _push_device_labels_to_home_assistant(hass, device)
     except InventoryError as err:
         connection.send_error(msg["id"], "invalid_backup", str(err))
         return
@@ -340,6 +353,8 @@ async def websocket_restore_backup(
     """Restore an automatic backup."""
     try:
         result = await _manager(hass).async_restore_backup(msg["backup_id"])
+        for device in result["devices"]:
+            _push_device_labels_to_home_assistant(hass, device)
     except InventoryError as err:
         connection.send_error(msg["id"], "invalid_backup", str(err))
         return
@@ -553,11 +568,115 @@ async def websocket_settings(
     try:
         if not isinstance(msg.get("settings"), dict):
             raise InventoryError("Settings data is required")
-        result = await _manager(hass).async_save_settings(msg["settings"])
+        settings = dict(msg["settings"])
+        _ensure_home_assistant_labels(hass, settings.get("labels", []))
+        settings["labels"] = _home_assistant_label_names(hass)
+        result = await _manager(hass).async_save_settings(settings)
     except InventoryError as err:
         connection.send_error(msg["id"], "invalid_settings", str(err))
         return
     connection.send_result(msg["id"], result)
+
+
+@callback
+def _ensure_home_assistant_labels(
+    hass: HomeAssistant, names: list[str]
+) -> dict[str, str]:
+    """Create missing Home Assistant labels and return name-to-ID mapping."""
+    registry = lr.async_get(hass)
+    for name in sorted(
+        {str(item).strip()[:60] for item in names if str(item).strip()},
+        key=str.casefold,
+    ):
+        if registry.async_get_label_by_name(name) is None:
+            registry.async_create(name)
+    return {
+        item.name.casefold(): item.label_id for item in registry.async_list_labels()
+    }
+
+
+@callback
+def _home_assistant_label_names(hass: HomeAssistant) -> list[str]:
+    """Return every Home Assistant label name."""
+    return sorted(
+        (item.name for item in lr.async_get(hass).async_list_labels()),
+        key=str.casefold,
+    )
+
+
+@callback
+def _inventory_label_target(
+    hass: HomeAssistant, device: dict[str, Any]
+) -> tuple[str, Any] | None:
+    """Resolve an inventory item to its Home Assistant device or entity."""
+    entity_registry = er.async_get(hass)
+    primary_entity = entity_registry.async_get(device.get("primary_entity_id", ""))
+    device_ids = [device.get("ha_device_id")]
+    if primary_entity:
+        device_ids.append(primary_entity.device_id)
+    device_registry = dr.async_get(hass)
+    for device_id in device_ids:
+        if device_id and (ha_device := device_registry.async_get(device_id)):
+            return "device", ha_device
+    if primary_entity:
+        return "entity", primary_entity
+    return None
+
+
+@callback
+def _push_device_labels_to_home_assistant(
+    hass: HomeAssistant, device: dict[str, Any], *, merge: bool = False
+) -> bool:
+    """Apply one inventory item's labels to its matching HA registry entry."""
+    label_ids_by_name = _ensure_home_assistant_labels(
+        hass, device.get("labels", [])
+    )
+    target = _inventory_label_target(hass, device)
+    if target is None:
+        return False
+    label_ids = {
+        label_ids_by_name[name.casefold()]
+        for name in device.get("labels", [])
+        if name.casefold() in label_ids_by_name
+    }
+    target_type, entry = target
+    if merge:
+        label_ids.update(entry.labels)
+    if entry.labels == label_ids:
+        return True
+    if target_type == "device":
+        dr.async_get(hass).async_update_device(entry.id, labels=label_ids)
+    else:
+        er.async_get(hass).async_update_entity(entry.entity_id, labels=label_ids)
+    return True
+
+
+async def async_sync_labels_from_home_assistant(hass: HomeAssistant) -> None:
+    """Synchronize HA labels and assignments into persistent inventory data."""
+    manager = _manager(hass)
+    data = await manager.async_snapshot()
+    if not data.get("ha_labels_migrated"):
+        _ensure_home_assistant_labels(hass, data.get("labels", []))
+        for device in data["devices"]:
+            _push_device_labels_to_home_assistant(hass, device, merge=True)
+
+    labels_by_id = {
+        item.label_id: item.name
+        for item in lr.async_get(hass).async_list_labels()
+    }
+    device_labels: dict[str, list[str]] = {}
+    for device in data["devices"]:
+        target = _inventory_label_target(hass, device)
+        if target is None:
+            continue
+        _, entry = target
+        device_labels[device["id"]] = sorted(
+            (labels_by_id[label_id] for label_id in entry.labels if label_id in labels_by_id),
+            key=str.casefold,
+        )
+    await manager.async_sync_ha_labels(
+        sorted(labels_by_id.values(), key=str.casefold), device_labels
+    )
 
 
 @callback
@@ -621,6 +740,10 @@ def _home_assistant_devices(
     device_registry = dr.async_get(hass)
     area_registry = ar.async_get(hass)
     entity_registry = er.async_get(hass)
+    labels_by_id = {
+        item.label_id: item.name
+        for item in lr.async_get(hass).async_list_labels()
+    }
     imported_ids = {
         item.get("ha_device_id") for item in inventory_devices if item.get("ha_device_id")
     }
@@ -693,6 +816,14 @@ def _home_assistant_devices(
                 "entity_name": common_entity_name(entity_ids),
                 "primary_entity_id": primary_entity_id,
                 "status": "unknown",
+                "labels": sorted(
+                    (
+                        labels_by_id[label_id]
+                        for label_id in device.labels
+                        if label_id in labels_by_id
+                    ),
+                    key=str.casefold,
+                ),
                 "ha_device_kind": "child" if is_child else "device",
                 "parent_ha_device_id": device.parent_device_id if is_child else "",
                 "parent_device_name": (

@@ -15,7 +15,7 @@ from .const import (
     DEFAULT_DEVICE_TYPES,
     DEFAULT_GENERAL_SETTINGS,
     DEFAULT_PROTOCOLS,
-    DEFAULT_TAGS,
+    DEFAULT_LABELS,
     DEVICE_TYPES_VERSION,
     IP_PROTOCOLS,
     STORAGE_KEY,
@@ -74,7 +74,7 @@ class InventoryStore:
             "device_types": list(DEFAULT_DEVICE_TYPES),
             "device_types_version": DEVICE_TYPES_VERSION,
             "brands": [],
-            "tags": list(DEFAULT_TAGS),
+            "labels": list(DEFAULT_LABELS),
             "logs": [],
             "backups": [],
             "counters": {
@@ -84,9 +84,14 @@ class InventoryStore:
         self.data.setdefault("devices", [])
         self.data.setdefault("protocols", deepcopy(DEFAULT_PROTOCOLS))
         self.data.setdefault("device_types", list(DEFAULT_DEVICE_TYPES))
-        self.data.setdefault("tags", list(DEFAULT_TAGS))
+        if "labels" not in self.data:
+            self.data["labels"] = self.data.pop("tags", list(DEFAULT_LABELS))
+            migrated = True
+        else:
+            self.data.pop("tags", None)
         self.data.setdefault("logs", [])
         self.data.setdefault("backups", [])
+        self.data.setdefault("ha_labels_migrated", False)
         previous_general = deepcopy(self.data.get("general"))
         self.data.setdefault("general", deepcopy(DEFAULT_GENERAL_SETTINGS))
         for key, value in DEFAULT_GENERAL_SETTINGS.items():
@@ -134,7 +139,11 @@ class InventoryStore:
             device.setdefault("ssid", "")
             device.setdefault("connected_device", "")
             device.setdefault("switch_port", "")
-            device.setdefault("tags", [])
+            if "labels" not in device:
+                device["labels"] = device.pop("tags", [])
+                migrated = True
+            else:
+                device.pop("tags", None)
             device.setdefault("battery_entity_id", "")
             device.setdefault("battery_last_replaced_at", "")
             device.setdefault("battery_history", [])
@@ -150,6 +159,53 @@ class InventoryStore:
             for backup in result.get("backups", [])
         ]
         return result
+
+    async def async_sync_ha_labels(
+        self,
+        labels: list[str],
+        device_labels: dict[str, list[str]],
+        *,
+        migrated: bool = True,
+    ) -> bool:
+        """Store labels and assignments read from Home Assistant."""
+        async with self._lock:
+            changed = False
+            cleaned_labels = sorted(
+                {str(label).strip()[:60] for label in labels if str(label).strip()},
+                key=str.casefold,
+            )
+            if self.data["labels"] != cleaned_labels:
+                self.data["labels"] = cleaned_labels
+                changed = True
+            for device in self.data["devices"]:
+                if device["id"] not in device_labels:
+                    continue
+                synced_labels = sorted(
+                    {
+                        str(label).strip()[:60]
+                        for label in device_labels[device["id"]]
+                        if str(label).strip()
+                    },
+                    key=str.casefold,
+                )
+                if device.get("labels", []) == synced_labels:
+                    continue
+                previous = list(device.get("labels", []))
+                device["labels"] = synced_labels
+                device["updated_at"] = _now()
+                self._record_log(
+                    "update",
+                    device=device,
+                    changes=[{"field": "labels", "old": previous, "new": synced_labels}],
+                    source="home_assistant",
+                )
+                changed = True
+            if migrated and not self.data.get("ha_labels_migrated"):
+                self.data["ha_labels_migrated"] = True
+                changed = True
+            if changed:
+                await self._store.async_save(self.data)
+            return changed
 
     async def async_export(self) -> dict[str, Any]:
         """Return a portable JSON backup."""
@@ -235,7 +291,7 @@ class InventoryStore:
             self._append_initial_battery_history(device)
             self.data["devices"].append(device)
             self._remember_brand(device["brand"])
-            self._remember_tags(device["tags"])
+            self._remember_labels(device["labels"])
             self._record_log("add", device=device, changes=self._device_changes({}, device))
             await self._store.async_save(self.data)
             return deepcopy(device)
@@ -274,7 +330,7 @@ class InventoryStore:
             device["protocol"] = self._normalise_protocol(device.get("protocol"))
             device["updated_at"] = _now()
             self._remember_brand(device["brand"])
-            self._remember_tags(device["tags"])
+            self._remember_labels(device["labels"])
             changes = self._device_changes(previous, device)
             if changes:
                 self._record_log("update", device=device, changes=changes)
@@ -304,8 +360,8 @@ class InventoryStore:
         self,
         device_ids: list[str],
         fields: dict[str, Any],
-        tag_mode: str = "",
-        tags: list[str] | None = None,
+        label_mode: str = "",
+        labels: list[str] | None = None,
     ) -> dict[str, Any]:
         """Update selected fields on multiple devices as one operation."""
         allowed_fields = {
@@ -320,9 +376,9 @@ class InventoryStore:
         unknown = set(fields) - allowed_fields
         if unknown:
             raise InventoryError("Unsupported bulk fields: " + ", ".join(sorted(unknown)))
-        if tag_mode not in {"", "add", "remove", "replace"}:
-            raise InventoryError("Invalid bulk tag operation")
-        if not fields and not tag_mode:
+        if label_mode not in {"", "add", "remove", "replace"}:
+            raise InventoryError("Invalid bulk label operation")
+        if not fields and not label_mode:
             raise InventoryError("Select at least one field to update")
 
         unique_ids = list(dict.fromkeys(str(item) for item in device_ids if str(item)))
@@ -335,21 +391,21 @@ class InventoryStore:
             backup_id = self._create_backup("before_bulk_update")["id"]
             try:
                 changed_count = 0
-                requested_tags = {
-                    str(tag).strip()[:60] for tag in (tags or []) if str(tag).strip()
+                requested_labels = {
+                    str(label).strip()[:60] for label in (labels or []) if str(label).strip()
                 }
                 for device in devices:
                     payload = {**device, **fields}
-                    current_tags = set(device.get("tags", []))
-                    if tag_mode == "add":
-                        payload["tags"] = sorted(current_tags | requested_tags, key=str.casefold)
-                    elif tag_mode == "remove":
-                        remove = {tag.casefold() for tag in requested_tags}
-                        payload["tags"] = [
-                            tag for tag in current_tags if tag.casefold() not in remove
+                    current_labels = set(device.get("labels", []))
+                    if label_mode == "add":
+                        payload["labels"] = sorted(current_labels | requested_labels, key=str.casefold)
+                    elif label_mode == "remove":
+                        remove = {label.casefold() for label in requested_labels}
+                        payload["labels"] = [
+                            label for label in current_labels if label.casefold() not in remove
                         ]
-                    elif tag_mode == "replace":
-                        payload["tags"] = sorted(requested_tags, key=str.casefold)
+                    elif label_mode == "replace":
+                        payload["labels"] = sorted(requested_labels, key=str.casefold)
 
                     updated = self._clean_device(payload)
                     previous = deepcopy(device)
@@ -366,7 +422,7 @@ class InventoryStore:
                         continue
                     device["updated_at"] = _now()
                     self._remember_brand(device["brand"])
-                    self._remember_tags(device["tags"])
+                    self._remember_labels(device["labels"])
                     self._record_log(
                         "bulk_update",
                         device=device,
@@ -454,7 +510,7 @@ class InventoryStore:
                 self._append_initial_battery_history(device)
                 self.data["devices"].append(device)
                 self._remember_brand(device["brand"])
-                self._remember_tags(device["tags"])
+                self._remember_labels(device["labels"])
                 self._record_log(
                     "import", device=device, changes=self._device_changes({}, device), source="import"
                 )
@@ -476,7 +532,7 @@ class InventoryStore:
                 "protocols": deepcopy(self.data["protocols"]),
                 "device_types": deepcopy(self.data["device_types"]),
                 "brands": deepcopy(self.data["brands"]),
-                "tags": deepcopy(self.data["tags"]),
+                "labels": deepcopy(self.data["labels"]),
             }
             general = _clean_general_settings(
                 payload.get("general", self.data["general"])
@@ -537,18 +593,18 @@ class InventoryStore:
                 device["brand"] for device in self.data["devices"] if device["brand"]
             )
 
-            tags = {
+            labels = {
                 str(item).strip()[:60]
-                for item in payload.get("tags", self.data["tags"])
+                for item in payload.get("labels", self.data["labels"])
                 if str(item).strip()
             }
-            tags.update(tag for device in self.data["devices"] for tag in device.get("tags", []))
+            labels.update(label for device in self.data["devices"] for label in device.get("labels", []))
 
             self.data["general"] = general
             self.data["protocols"] = cleaned
             self.data["device_types"] = device_types
             self.data["brands"] = sorted(brands, key=str.casefold)
-            self.data["tags"] = sorted(tags, key=str.casefold)
+            self.data["labels"] = sorted(labels, key=str.casefold)
             for key, config in cleaned.items():
                 self.data["counters"].setdefault(key, config["start"] - 1)
             current = {key: deepcopy(self.data[key]) for key in previous}
@@ -619,13 +675,13 @@ class InventoryStore:
             self.data["brands"].append(brand)
             self.data["brands"].sort(key=str.casefold)
 
-    def _remember_tags(self, tags: list[str]) -> None:
-        current = {item.casefold() for item in self.data["tags"]}
-        for tag in tags:
-            if tag.casefold() not in current:
-                self.data["tags"].append(tag)
-                current.add(tag.casefold())
-        self.data["tags"].sort(key=str.casefold)
+    def _remember_labels(self, labels: list[str]) -> None:
+        current = {item.casefold() for item in self.data["labels"]}
+        for label in labels:
+            if label.casefold() not in current:
+                self.data["labels"].append(label)
+                current.add(label.casefold())
+        self.data["labels"].sort(key=str.casefold)
 
     def _clean_device(self, payload: dict[str, Any]) -> dict[str, Any]:
         allowed = (
@@ -688,17 +744,17 @@ class InventoryStore:
         if missing:
             raise InventoryError("Required fields: " + ", ".join(missing))
         cleaned["status"] = cleaned["status"] or "unknown"
-        raw_tags = payload.get("tags", [])
-        if isinstance(raw_tags, str):
-            raw_tags = [item.strip() for item in raw_tags.split(",")]
-        if not isinstance(raw_tags, list):
-            raise InventoryError("Tags must be a list")
-        canonical = {tag.casefold(): tag for tag in self.data["tags"]}
-        cleaned["tags"] = sorted(
+        raw_labels = payload.get("labels", [])
+        if isinstance(raw_labels, str):
+            raw_labels = [item.strip() for item in raw_labels.split(",")]
+        if not isinstance(raw_labels, list):
+            raise InventoryError("Labels must be a list")
+        canonical = {label.casefold(): label for label in self.data["labels"]}
+        cleaned["labels"] = sorted(
             {
-                canonical.get(str(tag).strip().casefold(), str(tag).strip()[:60])
-                for tag in raw_tags
-                if str(tag).strip()
+                canonical.get(str(label).strip().casefold(), str(label).strip()[:60])
+                for label in raw_labels
+                if str(label).strip()
             },
             key=str.casefold,
         )
@@ -778,9 +834,13 @@ class InventoryStore:
         candidate = deepcopy(incoming)
         candidate.setdefault("device_types", list(DEFAULT_DEVICE_TYPES))
         candidate.setdefault("brands", [])
-        candidate.setdefault("tags", list(DEFAULT_TAGS))
+        if "labels" not in candidate:
+            candidate["labels"] = candidate.pop("tags", list(DEFAULT_LABELS))
+        else:
+            candidate.pop("tags", None)
         candidate.setdefault("logs", [])
         candidate.setdefault("counters", {})
+        candidate.setdefault("ha_labels_migrated", False)
         candidate.setdefault("general", deepcopy(DEFAULT_GENERAL_SETTINGS))
         candidate["general"] = _clean_general_settings(candidate["general"])
         candidate.setdefault(
@@ -796,6 +856,8 @@ class InventoryStore:
             for raw in devices:
                 if not isinstance(raw, dict):
                     raise InventoryError("Invalid device in backup")
+                if "labels" not in raw and "tags" in raw:
+                    raw = {**raw, "labels": raw["tags"]}
                 cleaned = self._clean_device(raw)
                 code = _to_int(raw.get("device_code"))
                 if code is None or code in codes:
@@ -816,7 +878,7 @@ class InventoryStore:
                 codes.add(code)
             candidate["devices"] = cleaned_devices
             candidate["logs"] = [item for item in candidate["logs"] if isinstance(item, dict)][-500:]
-            candidate["tags"] = sorted({str(item).strip()[:60] for item in candidate["tags"] if str(item).strip()}, key=str.casefold)
+            candidate["labels"] = sorted({str(item).strip()[:60] for item in candidate["labels"] if str(item).strip()}, key=str.casefold)
             candidate["brands"] = sorted({str(item).strip()[:100] for item in candidate["brands"] if str(item).strip()}, key=str.casefold)
             for key, config in protocols.items():
                 used = [device["device_code"] for device in cleaned_devices if device["protocol"] == key]

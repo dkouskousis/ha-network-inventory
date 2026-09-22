@@ -174,7 +174,7 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
                 {"general": {"time_format": "auto", "date_format": "day_first"}}
             )
 
-    async def test_network_fields_tags_and_change_log_are_stored(self):
+    async def test_network_fields_labels_and_change_log_are_stored(self):
         device = await self.manager.async_add(
             device_payload(
                 "Outdoor camera",
@@ -184,11 +184,11 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
                 ssid="House IoT",
                 connected_device="Garden AP",
                 switch_port="8",
-                tags=["IoT", "Security", "Outdoor"],
+                labels=["IoT", "Security", "Outdoor"],
             )
         )
         self.assertEqual(device["vlan"], "30")
-        self.assertEqual(device["tags"], ["IoT", "Outdoor", "Security"])
+        self.assertEqual(device["labels"], ["IoT", "Outdoor", "Security"])
         updated = await self.manager.async_update(device["id"], {"switch_port": "9"})
         self.assertEqual(updated["switch_port"], "9")
         log = self.manager.data["logs"][-1]
@@ -209,18 +209,18 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([item["id"] for item in self.manager.data["devices"]], [original["id"]])
 
     async def test_json_export_and_restore(self):
-        await self.manager.async_add(device_payload("Router", "wifi", tags=["Critical"]))
+        await self.manager.async_add(device_payload("Router", "wifi", labels=["Critical"]))
         exported = await self.manager.async_export()
         await self.manager.async_add(
             device_payload("Motion", "zigbee", mac="00:11:22:33:44:88")
         )
         await self.manager.async_restore(exported)
         self.assertEqual(len(self.manager.data["devices"]), 1)
-        self.assertEqual(self.manager.data["devices"][0]["tags"], ["Critical"])
+        self.assertEqual(self.manager.data["devices"][0]["labels"], ["Critical"])
 
     async def test_bulk_update_creates_backup_and_updates_selected_fields(self):
         first = await self.manager.async_add(
-            device_payload("First", "wifi", tags=["IoT"])
+            device_payload("First", "wifi", labels=["IoT"])
         )
         second = await self.manager.async_add(
             device_payload("Second", "wifi", mac="00:11:22:33:44:99")
@@ -237,24 +237,59 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(device["network"], "IoT")
             self.assertEqual(device["vlan"], "30")
             self.assertEqual(device["device_type"], "Camera")
-            self.assertIn("Critical", device["tags"])
+            self.assertIn("Critical", device["labels"])
         bulk_logs = [
             item for item in self.manager.data["logs"] if item["action"] == "bulk_update"
         ]
         self.assertEqual(len(bulk_logs), 2)
 
-    async def test_bulk_tag_remove_and_replace(self):
+    async def test_bulk_label_remove_and_replace(self):
         device = await self.manager.async_add(
-            device_payload("Tagged", "zigbee", tags=["IoT", "Battery"])
+            device_payload("Tagged", "zigbee", labels=["IoT", "Battery"])
         )
         await self.manager.async_bulk_update([device["id"]], {}, "remove", ["IoT"])
-        self.assertEqual(self.manager.data["devices"][0]["tags"], ["Battery"])
+        self.assertEqual(self.manager.data["devices"][0]["labels"], ["Battery"])
         await self.manager.async_bulk_update(
             [device["id"]], {}, "replace", ["Outdoor", "Security"]
         )
         self.assertEqual(
-            self.manager.data["devices"][0]["tags"], ["Outdoor", "Security"]
+            self.manager.data["devices"][0]["labels"], ["Outdoor", "Security"]
         )
+
+    async def test_home_assistant_labels_replace_matched_device_labels(self):
+        device = await self.manager.async_add(
+            device_payload("Matched sensor", "zigbee", labels=["IoT"])
+        )
+        changed = await self.manager.async_sync_ha_labels(
+            ["Battery", "Critical"], {device["id"]: ["Battery"]}
+        )
+        self.assertTrue(changed)
+        self.assertEqual(self.manager.data["labels"], ["Battery", "Critical"])
+        self.assertEqual(self.manager.data["devices"][0]["labels"], ["Battery"])
+        self.assertTrue(self.manager.data["ha_labels_migrated"])
+        self.assertEqual(self.manager.data["logs"][-1]["source"], "home_assistant")
+
+    async def test_legacy_tags_are_migrated_to_labels(self):
+        device = await self.manager.async_add(
+            device_payload("Legacy sensor", "zigbee", labels=["Battery"])
+        )
+        legacy = dict(self.manager.data)
+        legacy["tags"] = legacy.pop("labels")
+        legacy_labels = list(legacy["tags"])
+        legacy["devices"] = [dict(device)]
+        legacy["devices"][0]["tags"] = legacy["devices"][0].pop("labels")
+
+        migrated = storage.InventoryStore(None)
+
+        async def load_legacy():
+            return legacy
+
+        migrated._store.async_load = load_legacy
+        await migrated.async_load()
+        self.assertNotIn("tags", migrated.data)
+        self.assertEqual(migrated.data["labels"], legacy_labels)
+        self.assertNotIn("tags", migrated.data["devices"][0])
+        self.assertEqual(migrated.data["devices"][0]["labels"], ["Battery"])
 
     async def test_change_log_keeps_latest_500_entries(self):
         for index in range(510):
@@ -365,6 +400,9 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("websocket_battery_replaced", source)
         self.assertIn("def _home_assistant_entities", source)
         self.assertIn("def _primary_entity_id", source)
+        self.assertIn("label_registry as lr", source)
+        self.assertIn("async_sync_labels_from_home_assistant", source)
+        self.assertIn("async_update_device(entry.id, labels=label_ids)", source)
 
 
 if __name__ == "__main__":

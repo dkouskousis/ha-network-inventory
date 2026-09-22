@@ -24,8 +24,8 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - General settings for 24/12-hour time and day-first/month-first dates
 - Network, VLAN, SSID, connected AP/switch, and switch-port fields
 - Automatic UniFi topology enrichment for devices matched by MAC address
-- Configurable custom tags with device-list chips and tag filtering
-- Bulk editing for device type, brand, network details, and tags
+- Two-way Home Assistant Label synchronization with device-list chips and label filtering
+- Bulk editing for device type, brand, network details, and labels
 - UniFi-style device table with sorting, persistent resizable/reorderable columns, pinning, visibility controls, and density modes
 - Saved table views plus bookmarkable URL filters for repeatable workflows
 - Home Assistant Device Registry support for main and child devices using the current config entry API
@@ -80,13 +80,13 @@ The importer recognises these spreadsheet columns:
 ```text
 Device Code, MAC / IEEE Address, Device IP, Device Type, Brand,
 Area, Device Name, Device ID, HA Primary Entity, Comments, Protocol,
-Network, VLAN, SSID, AP / Switch, Switch Port, Tags,
+Network, VLAN, SSID, AP / Switch, Switch Port, Labels,
 Battery Entity, Last Battery Change
 ```
 
 `Device Name`, `Device Type`, `Brand`, `Area`, `MAC / IEEE Address`, and `Protocol` are required. `Device IP` is also required for Wi-Fi and Ethernet devices. `Device Code` can be omitted to assign the next available permanent ID automatically. The importer also accepts `Wi-Fi`, `ZigBee`, `Bluetooth`, `Thread`, `Z-Wave`, `Ethernet`, `Matter`, and `Other` protocol values.
 
-Separate multiple tags in CSV with semicolons. JSON exports include devices, settings, counters, printer configuration, and the change log. Before a multi-row import or JSON restore, Network Inventory preserves a restorable internal backup.
+Separate multiple labels in CSV with semicolons. JSON exports use `labels` both for the shared label registry and for each device assignment. Before a multi-row import or JSON restore, Network Inventory preserves a restorable internal backup.
 
 ## Storage and privacy
 
