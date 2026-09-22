@@ -35,6 +35,10 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - Native Shelly integration status card with detected-device, firmware-entity, and available-update counts plus direct Home Assistant setup access
 - Right-side device details panel with edit, print, UniFi, and delete actions
 - Device-count navigation badge and HACS update availability beside the installed version
+- User-defined device fields with text, number, date, URL, and checkbox types
+- Per-device administration URL and named external links
+- Authenticated per-device attachments with a 10 MB per-file limit
+- Full ZIP export and restore containing both inventory data and attachments
 - Search and protocol filters
 - Detailed filters for protocol, type, brand, area, and status
 - Home Assistant area suggestions with support for custom areas
@@ -82,7 +86,7 @@ The importer recognises these spreadsheet columns:
 
 ```text
 Device Code, MAC / IEEE Address, Device IP, Device Type, Brand,
-Area, Device Name, Device ID, HA Primary Entity, Comments, Protocol,
+Area, Device Name, Device ID, HA Primary Entity, Admin URL, Comments, Protocol,
 Network, VLAN, SSID, AP / Switch, Switch Port, Labels,
 Battery Entity, Last Battery Change
 ```
@@ -94,6 +98,8 @@ Separate multiple labels in CSV with semicolons. JSON exports use `labels` both 
 ## Storage and privacy
 
 Inventory data is stored locally in Home Assistant's private `.storage` directory. The panel and its WebSocket commands require an administrator account. The UniFi API key is kept in a separate private Home Assistant Store and is never returned to the browser after submission.
+
+Device attachments are stored locally under `.storage/network_inventory/attachments`, are only available through authenticated administrator endpoints, and are included in normal Home Assistant backups. Network Inventory can also create a portable full ZIP backup containing `inventory.json` and every attachment. Full ZIP restore replaces both inventory data and the attachment collection. Individual attachments are limited to 10 MB and a full portable backup to 100 MB.
 
 ## UniFi Cloud
 
