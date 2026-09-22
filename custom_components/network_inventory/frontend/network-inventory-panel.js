@@ -662,7 +662,7 @@ class NetworkInventoryPanel extends HTMLElement {
     if (info.inProgress) return `<span class="firmware-indicator updating ${large ? "large" : ""}"><ha-icon icon="mdi:update"></ha-icon>${this.t("updatingFirmware")}${info.progress !== null ? ` · ${esc(Math.round(info.progress))}%` : ""}</span>`;
     if (!info.available) return `<span class="firmware-indicator unavailable ${large ? "large" : ""}"><ha-icon icon="mdi:cloud-off-outline"></ha-icon>${this.t("unavailable")}</span>`;
     if (info.updateAvailable) return `<span class="firmware-indicator update ${large ? "large" : ""}"><ha-icon icon="mdi:update"></ha-icon>${this.t("updateAvailable")}${info.latestVersion ? ` · ${esc(info.latestVersion)}` : ""}</span>`;
-    return `<span class="firmware-indicator current ${large ? "large" : ""}"><ha-icon icon="mdi:check-circle-outline"></ha-icon>${this.t("upToDate")}${info.installedVersion ? ` · ${esc(info.installedVersion)}` : ""}</span>`;
+    return `<span class="firmware-indicator current ${large ? "large" : ""}"><ha-icon icon="mdi:check-circle-outline"></ha-icon>${this.t("upToDate")}</span>`;
   }
 
   statusBadge(status) {
