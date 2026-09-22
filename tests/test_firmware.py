@@ -1,4 +1,4 @@
-"""Tests for Shelly firmware update discovery."""
+"""Tests for native firmware update discovery."""
 
 from __future__ import annotations
 
@@ -61,6 +61,18 @@ class FirmwareTests(unittest.TestCase):
         selected = firmware.select_shelly_firmware_entries(entries)
         self.assertEqual(selected["device-1"].entity_id, "update.enabled_firmware")
 
+    def test_selects_reolink_update_per_device(self):
+        entries = [
+            Entry("update.front_camera_firmware", "device-1", platform="reolink"),
+            Entry("update.kitchen_firmware", "device-2"),
+            Entry("sensor.front_camera_firmware", "device-1", platform="reolink"),
+        ]
+        selected = firmware.select_reolink_firmware_entries(entries)
+        self.assertEqual(list(selected), ["device-1"])
+        self.assertEqual(
+            selected["device-1"].entity_id, "update.front_camera_firmware"
+        )
+
     def test_builds_available_update_details(self):
         entry = Entry("update.living_room_firmware", "device-1")
         state = State(
@@ -77,6 +89,7 @@ class FirmwareTests(unittest.TestCase):
         self.assertTrue(details["firmware_available"])
         self.assertEqual(details["firmware_installed_version"], "1.5.0")
         self.assertEqual(details["firmware_latest_version"], "1.6.2")
+        self.assertEqual(details["firmware_integration"], "shelly")
 
     def test_uses_numeric_progress(self):
         entry = Entry("update.office_firmware", "device-1")
@@ -104,6 +117,23 @@ class FirmwareTests(unittest.TestCase):
         self.assertEqual(status["active_firmware_entity_count"], 1)
         self.assertEqual(status["updates_available"], 1)
 
+
+    def test_summarizes_native_reolink_integration(self):
+        updates = {
+            "device-1": {
+                "firmware_update_disabled": False,
+                "firmware_update_available": True,
+            }
+        }
+        status = firmware.reolink_integration_status(
+            [object()], updates, device_count=4
+        )
+        self.assertTrue(status["native"])
+        self.assertTrue(status["configured"])
+        self.assertEqual(status["device_count"], 4)
+        self.assertEqual(status["firmware_entity_count"], 1)
+        self.assertEqual(status["active_firmware_entity_count"], 1)
+        self.assertEqual(status["updates_available"], 1)
 
 if __name__ == "__main__":
     unittest.main()
