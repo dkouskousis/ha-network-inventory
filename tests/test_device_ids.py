@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import types
 import unittest
+import tempfile
+from io import BytesIO
+from zipfile import ZipFile
 
 
 class DummyStore:
@@ -56,6 +60,17 @@ def load_storage_module():
 
 
 storage = load_storage_module()
+
+files_spec = importlib.util.spec_from_file_location(
+    "network_inventory.files",
+    Path(__file__).parents[1]
+    / "custom_components"
+    / "network_inventory"
+    / "files.py",
+)
+files = importlib.util.module_from_spec(files_spec)
+sys.modules["network_inventory.files"] = files
+files_spec.loader.exec_module(files)
 
 
 def device_payload(name, protocol, **values):
@@ -217,6 +232,98 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
         await self.manager.async_restore(exported)
         self.assertEqual(len(self.manager.data["devices"]), 1)
         self.assertEqual(self.manager.data["devices"][0]["labels"], ["Critical"])
+
+    async def test_custom_fields_links_and_admin_url_are_stored(self):
+        settings = await self.manager.async_save_settings(
+            {
+                "custom_fields": [
+                    {"label": "Purchase date", "type": "date"},
+                    {"label": "PoE", "type": "boolean"},
+                ]
+            }
+        )
+        purchase_id, poe_id = [item["id"] for item in settings["custom_fields"]]
+        device = await self.manager.async_add(
+            device_payload(
+                "Managed switch",
+                "ethernet",
+                admin_url="https://192.168.1.2",
+                links=[{"label": "Manual", "url": "https://example.com/manual.pdf"}],
+                custom_values={purchase_id: "2026-09-22", poe_id: True},
+            )
+        )
+        self.assertEqual(device["admin_url"], "https://192.168.1.2")
+        self.assertEqual(device["links"][0]["label"], "Manual")
+        self.assertEqual(device["custom_values"][purchase_id], "2026-09-22")
+        self.assertTrue(device["custom_values"][poe_id])
+
+    async def test_invalid_device_url_is_rejected(self):
+        with self.assertRaisesRegex(storage.InventoryError, "Admin URL"):
+            await self.manager.async_add(
+                device_payload("Unsafe", "wifi", admin_url="javascript:alert(1)")
+            )
+
+    async def test_attachment_metadata_and_full_zip_round_trip(self):
+        device = await self.manager.async_add(device_payload("Router", "wifi"))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "attachments"
+            self.manager.attachments_dir = root
+            attachment_id = "attachment123"
+            stored_name = files.stored_attachment_name(attachment_id, "manual.pdf")
+            target_dir = root / device["id"]
+            target_dir.mkdir(parents=True)
+            (target_dir / stored_name).write_bytes(b"pdf-content")
+            await self.manager.async_add_attachment(
+                device["id"],
+                {
+                    "id": attachment_id,
+                    "name": "manual.pdf",
+                    "stored_name": stored_name,
+                    "content_type": "application/pdf",
+                    "size": 11,
+                },
+            )
+            payload = await self.manager.async_export()
+            archive = files.build_full_backup(payload, root)
+            restored_payload, restored_files = files.parse_full_backup(archive)
+            self.assertEqual(restored_payload["data"]["devices"][0]["attachments"][0]["name"], "manual.pdf")
+            self.assertEqual(restored_files[f"{device['id']}/{stored_name}"], b"pdf-content")
+            updated = await self.manager.async_update(
+                device["id"], {"attachments": [], "comments": "Still attached"}
+            )
+            self.assertEqual(updated["attachments"][0]["id"], attachment_id)
+            removed = await self.manager.async_remove_attachment(
+                device["id"], attachment_id
+            )
+            self.assertEqual(removed["name"], "manual.pdf")
+
+    async def test_full_zip_rejects_undeclared_paths(self):
+        output = BytesIO()
+        with ZipFile(output, "w") as archive:
+            archive.writestr("inventory.json", '{"data":{"devices":[]}}')
+            archive.writestr("../outside.txt", "unsafe")
+        with self.assertRaisesRegex(storage.InventoryError, "invalid path"):
+            files.parse_full_backup(output.getvalue())
+
+    async def test_full_zip_rejects_attachment_size_mismatch(self):
+        device = await self.manager.async_add(device_payload("Router", "wifi"))
+        attachment = {
+            "id": "attachment123",
+            "name": "manual.pdf",
+            "stored_name": "attachment123.pdf",
+            "content_type": "application/pdf",
+            "size": 99,
+        }
+        self.manager.data["devices"][0]["attachments"] = [attachment]
+        payload = await self.manager.async_export()
+        output = BytesIO()
+        with ZipFile(output, "w") as archive:
+            archive.writestr("inventory.json", json.dumps(payload))
+            archive.writestr(
+                f"attachments/{device['id']}/attachment123.pdf", b"short"
+            )
+        with self.assertRaisesRegex(storage.InventoryError, "size mismatch"):
+            files.parse_full_backup(output.getvalue())
 
     async def test_bulk_update_creates_backup_and_updates_selected_fields(self):
         first = await self.manager.async_add(
