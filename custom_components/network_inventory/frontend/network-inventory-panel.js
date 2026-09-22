@@ -56,7 +56,13 @@ const TEXT = {
     generalSettingsHelp: "Choose how dates and times are displayed throughout Network Inventory.",
     timeFormat: "Time format", dateFormat: "Date format", twentyFourHour: "24-hour", twelveHour: "12-hour",
     dayFirst: "Day first", monthFirst: "Month first", formatPreview: "Preview",
-    updateAvailable: "Update available", viewUpdate: "Open Home Assistant updates"
+    updateAvailable: "Update available", viewUpdate: "Open Home Assistant updates",
+    firmwareStatus: "Firmware", installedVersion: "Installed version", latestVersion: "Latest version",
+    upToDate: "Up to date", updatingFirmware: "Updating", installFirmware: "Update firmware",
+    firmwareEntity: "Firmware update entity", firmwareEntityDisabled: "Entity disabled", firmwareDisabled: "Enable the firmware update entity in Home Assistant first.",
+    firmwareUnavailable: "The firmware update entity is currently unavailable.", firmwareRestartWarning: "The device may restart and be unavailable for a few minutes.",
+    confirmFirmwareUpdate: "Install Shelly firmware update?", firmwareUpdateStarted: "Firmware update started",
+    releaseNotes: "Release notes"
   },
   el: {
     title: "Καταγραφή Συσκευών", overview: "Επισκόπηση", devices: "Συσκευές", newestDevices: "Νεότερες συσκευές", discover: "Discover", homeAssistant: "Home Assistant",
@@ -115,7 +121,13 @@ const TEXT = {
     generalSettingsHelp: "Επίλεξε πώς θα εμφανίζονται οι ημερομηνίες και οι ώρες σε όλο το Network Inventory.",
     timeFormat: "Μορφή ώρας", dateFormat: "Μορφή ημερομηνίας", twentyFourHour: "24ωρη", twelveHour: "12ωρη",
     dayFirst: "Πρώτα η ημέρα", monthFirst: "Πρώτα ο μήνας", formatPreview: "Παράδειγμα",
-    updateAvailable: "Νέα έκδοση", viewUpdate: "Άνοιγμα ενημερώσεων Home Assistant"
+    updateAvailable: "Νέα έκδοση", viewUpdate: "Άνοιγμα ενημερώσεων Home Assistant",
+    firmwareStatus: "Firmware", installedVersion: "Εγκατεστημένη έκδοση", latestVersion: "Νέα έκδοση",
+    upToDate: "Ενημερωμένο", updatingFirmware: "Γίνεται ενημέρωση", installFirmware: "Ενημέρωση firmware",
+    firmwareEntity: "Entity ενημέρωσης firmware", firmwareEntityDisabled: "Entity απενεργοποιημένο", firmwareDisabled: "Ενεργοποίησε πρώτα το entity ενημέρωσης firmware στο Home Assistant.",
+    firmwareUnavailable: "Το entity ενημέρωσης firmware δεν είναι διαθέσιμο αυτή τη στιγμή.", firmwareRestartWarning: "Η συσκευή μπορεί να επανεκκινηθεί και να μην είναι διαθέσιμη για λίγα λεπτά.",
+    confirmFirmwareUpdate: "Να εγκατασταθεί η ενημέρωση firmware του Shelly;", firmwareUpdateStarted: "Η ενημέρωση firmware ξεκίνησε",
+    releaseNotes: "Σημειώσεις έκδοσης"
   }
 };
 
@@ -123,7 +135,7 @@ const COLUMN_WIDTHS_KEY = "network-inventory-column-widths";
 const TABLE_PREFERENCES_KEY = "network-inventory-table-preferences";
 const DEFAULT_COLUMN_WIDTHS = {
   device_code: 90, name: 230, status: 100, device_type: 145, brand: 145, model: 155,
-  area: 135, protocol: 125, mac: 175, ip_address: 135, battery_level: 135, network: 150, vlan: 90,
+  area: 135, protocol: 125, mac: 175, ip_address: 135, battery_level: 135, firmware_status: 165, network: 150, vlan: 90,
   ssid: 155, connected_device: 175, switch_port: 110, labels: 185
 };
 const DEFAULT_COLUMN_ORDER = Object.keys(DEFAULT_COLUMN_WIDTHS);
@@ -142,7 +154,8 @@ function loadTablePreferences() {
   const stored = JSON.parse(localStorage.getItem(TABLE_PREFERENCES_KEY) || "{}");
   const migrateColumns = values => values.map(key => key === "tags" ? "labels" : key);
   const order = Array.isArray(stored.columnOrder) ? migrateColumns(stored.columnOrder).filter(key => DEFAULT_COLUMN_ORDER.includes(key)) : [];
-  const visible = Array.isArray(stored.visibleColumns) ? migrateColumns(stored.visibleColumns).filter(key => DEFAULT_COLUMN_ORDER.includes(key)) : DEFAULT_COLUMN_ORDER;
+  const visible = Array.isArray(stored.visibleColumns) ? migrateColumns(stored.visibleColumns).filter(key => DEFAULT_COLUMN_ORDER.includes(key)) : [...DEFAULT_COLUMN_ORDER];
+  if (Array.isArray(stored.visibleColumns) && stored.firmwareColumnAdded !== true && !visible.includes("firmware_status")) visible.push("firmware_status");
   const pinned = Array.isArray(stored.pinnedColumns) ? migrateColumns(stored.pinnedColumns).filter(key => DEFAULT_COLUMN_ORDER.includes(key)) : ["device_code", "name"];
   return {
     columnOrder: [...order, ...DEFAULT_COLUMN_ORDER.filter(key => !order.includes(key))],
@@ -178,6 +191,7 @@ class NetworkInventoryPanel extends HTMLElement {
     this.savedViews = tablePreferences.savedViews;
     this.activeSavedView = "";
     this._updateVersion = "";
+    this._firmwareSignature = "";
     this.sortKey = "device_code";
     this.sortDirection = "asc";
     this.discoverView = "ha";
@@ -210,7 +224,10 @@ class NetworkInventoryPanel extends HTMLElement {
       const updateVersion = this.availableUpdate()?.latestVersion || "";
       const updateChanged = updateVersion !== this._updateVersion;
       this._updateVersion = updateVersion;
-      if ((batteryChanged || updateChanged) && !this.shadowRoot.querySelector(".modal-backdrop")) this.render();
+      const firmwareSignature = this.firmwareSignature();
+      const firmwareChanged = firmwareSignature !== this._firmwareSignature;
+      this._firmwareSignature = firmwareSignature;
+      if ((batteryChanged || updateChanged || firmwareChanged) && !this.shadowRoot.querySelector(".modal-backdrop")) this.render();
     }
     if (this.isConnected && !this._started) this.load();
   }
@@ -249,6 +266,35 @@ class NetworkInventoryPanel extends HTMLElement {
     };
   }
 
+  firmwareInfo(device) {
+    const entityId = device.firmware_update_entity_id || "";
+    const state = entityId ? this._hass?.states?.[entityId] : null;
+    const attributes = state?.attributes || {};
+    const rawProgress = attributes.update_percentage ?? (typeof attributes.in_progress === "number" ? attributes.in_progress : null);
+    const progress = Number.isFinite(Number(rawProgress)) ? Math.max(0, Math.min(100, Number(rawProgress))) : null;
+    const inProgress = Boolean(attributes.in_progress) || progress !== null;
+    const disabled = Boolean(device.firmware_update_disabled && !state);
+    const available = Boolean(state && !["unknown", "unavailable"].includes(state.state));
+    return {
+      entityId,
+      installedVersion: attributes.installed_version || device.firmware_installed_version || "",
+      latestVersion: attributes.latest_version || device.firmware_latest_version || "",
+      releaseUrl: attributes.release_url || device.firmware_release_url || "",
+      updateAvailable: Boolean(state ? state.state === "on" : device.firmware_update_available),
+      inProgress,
+      progress,
+      disabled,
+      available: state ? available : Boolean(device.firmware_available && !disabled)
+    };
+  }
+
+  firmwareSignature() {
+    return this.data.devices.filter(device => device.firmware_update_entity_id).map(device => {
+      const info = this.firmwareInfo(device);
+      return [info.entityId, info.installedVersion, info.latestVersion, info.updateAvailable, info.inProgress, info.progress, info.available].join(":");
+    }).join("|");
+  }
+
   loadFiltersFromUrl() {
     const params = new URLSearchParams(window.location.search);
     Object.entries(FILTER_URL_KEYS).forEach(([property, parameter]) => {
@@ -274,7 +320,8 @@ class NetworkInventoryPanel extends HTMLElement {
       visibleColumns: [...this.visibleColumns],
       pinnedColumns: [...this.pinnedColumns],
       density: this.tableDensity,
-      savedViews: this.savedViews
+      savedViews: this.savedViews,
+      firmwareColumnAdded: true
     }));
   }
 
@@ -547,6 +594,7 @@ class NetworkInventoryPanel extends HTMLElement {
       { key: "area", label: this.t("area") }, { key: "protocol", label: this.t("protocol") },
       { key: "mac", label: this.t("address") }, { key: "ip_address", label: this.t("ip") },
       { key: "battery_level", label: this.t("batteryLevel") },
+      { key: "firmware_status", label: this.t("firmwareStatus") },
       { key: "network", label: this.t("network") }, { key: "vlan", label: this.t("vlan") },
       { key: "ssid", label: this.t("ssid") }, { key: "connected_device", label: this.t("connectedDevice") },
       { key: "switch_port", label: this.t("switchPort") }, { key: "labels", label: this.t("labels") }
@@ -579,6 +627,7 @@ class NetworkInventoryPanel extends HTMLElement {
     }
     if (key === "mac" || key === "ip_address") return `<span>${esc(value || "—")}</span>${value ? `<button class="copy-cell" data-copy="${esc(value)}"><ha-icon icon="mdi:content-copy"></ha-icon></button>` : ""}`;
     if (key === "battery_level") return device.battery_entity_id || (device.labels || []).some(label => label.toLowerCase() === "battery") ? this.batteryIndicator(device) : "—";
+    if (key === "firmware_status") return this.firmwareIndicator(device);
     if (key === "labels") return this.labelChips(device.labels);
     return esc(value || "—");
   }
@@ -589,6 +638,16 @@ class NetworkInventoryPanel extends HTMLElement {
     const tone = level <= 20 ? "low" : level <= 40 ? "medium" : "good";
     const icon = level <= 10 ? "mdi:battery-10" : level <= 20 ? "mdi:battery-20" : level <= 40 ? "mdi:battery-40" : level <= 60 ? "mdi:battery-60" : level <= 80 ? "mdi:battery-80" : "mdi:battery";
     return `<span class="battery-indicator ${tone} ${large ? "large" : ""}"><ha-icon icon="${icon}"></ha-icon><b>${esc(level)}%</b></span>`;
+  }
+
+  firmwareIndicator(device, large = false) {
+    const info = this.firmwareInfo(device);
+    if (!info.entityId) return "—";
+    if (info.disabled) return `<span class="firmware-indicator disabled ${large ? "large" : ""}"><ha-icon icon="mdi:cog-off-outline"></ha-icon>${this.t("firmwareEntityDisabled")}</span>`;
+    if (info.inProgress) return `<span class="firmware-indicator updating ${large ? "large" : ""}"><ha-icon icon="mdi:update"></ha-icon>${this.t("updatingFirmware")}${info.progress !== null ? ` · ${esc(Math.round(info.progress))}%` : ""}</span>`;
+    if (!info.available) return `<span class="firmware-indicator unavailable ${large ? "large" : ""}"><ha-icon icon="mdi:cloud-off-outline"></ha-icon>${this.t("unavailable")}</span>`;
+    if (info.updateAvailable) return `<span class="firmware-indicator update ${large ? "large" : ""}"><ha-icon icon="mdi:update"></ha-icon>${this.t("updateAvailable")}${info.latestVersion ? ` · ${esc(info.latestVersion)}` : ""}</span>`;
+    return `<span class="firmware-indicator current ${large ? "large" : ""}"><ha-icon icon="mdi:check-circle-outline"></ha-icon>${this.t("upToDate")}${info.installedVersion ? ` · ${esc(info.installedVersion)}` : ""}</span>`;
   }
 
   statusBadge(status) {
@@ -603,12 +662,14 @@ class NetworkInventoryPanel extends HTMLElement {
     const duplicates = this.devicesWithIp(device.ip_address).filter(item => item.id !== device.id);
     const batteryPowered = Boolean(device.battery_entity_id) || (device.labels || []).some(label => label.toLowerCase() === "battery");
     const batteryHistory = [...(device.battery_history || [])].reverse();
+    const firmware = this.firmwareInfo(device);
     const row = (label, value, mono = false) => `<div><span>${label}</span><strong class="${mono ? "mono" : ""}">${esc(value || "—")}</strong></div>`;
     return `<div class="drawer-head"><div><span class="code">#${esc(device.device_code)}</span><h2>${esc(device.name)}</h2><div class="drawer-badges">${this.statusBadge(device.status)}<span class="pill" style="--pill:${safeColor(protocol.color)}">${esc(protocol.label)}</span>${unifi ? `<span class="unifi-badge"><ha-icon icon="mdi:access-point-network"></ha-icon>UniFi</span>` : ""}</div></div><button data-close-drawer title="${this.t("cancel")}"><ha-icon icon="mdi:close"></ha-icon></button></div>
       <div class="drawer-body">
         <section><h3>${this.t("details")}</h3>${row(this.t("type"), device.device_type)}${row(this.t("brand"), device.brand)}${row(this.t("model"), device.model)}${row(this.t("area"), device.area)}${device.ha_device_kind ? row(this.t("homeAssistant"), this.t(device.ha_device_kind === "child" ? "childDevice" : "mainDevice")) : ""}${device.parent_device_name ? row(this.t("parentDevice"), device.parent_device_name) : ""}${this.labelChips(device.labels)}</section>
         <section><h3>${this.t("networkDetails")}</h3>${row(this.t("address"), device.mac, true)}${row(this.t("ip"), device.ip_address, true)}${row(this.t("network"), device.network)}${row(this.t("vlan"), device.vlan)}${row(this.t("ssid"), device.ssid)}${row(this.t("connectedDevice"), device.connected_device)}${row(this.t("switchPort"), device.switch_port)}${mismatch ? `<button class="drawer-inline-action" data-sync-ip="${esc(device.id)}"><ha-icon icon="mdi:sync"></ha-icon>${this.t(device.ip_address ? "updateInventoryIp" : "addInventoryIp")} · ${esc(unifi.ip_address)}</button>` : ""}${duplicates.length ? `<p class="drawer-warning"><ha-icon icon="mdi:alert-circle-outline"></ha-icon>${this.t("sharedWith")}: ${esc(duplicates.map(item => `#${item.device_code} ${item.name}`).join(", "))}</p>` : ""}</section>
         ${batteryPowered ? `<section class="drawer-battery"><div class="drawer-section-title"><h3>${this.t("batteryPowered")}</h3>${this.batteryIndicator(device, true)}</div>${row(this.t("batteryEntity"), device.battery_entity_id || this.t("noBatteryEntity"), true)}${row(this.t("lastBatteryChange"), device.battery_last_replaced_at ? this.formatDateOnly(device.battery_last_replaced_at) : this.t("never"))}<button class="drawer-inline-action battery-action" data-battery-replace="${esc(device.id)}"><ha-icon icon="mdi:battery-sync-outline"></ha-icon>${this.t("recordReplacement")}</button>${batteryHistory.length ? `<div class="battery-history"><h4>${this.t("batteryHistory")}</h4>${batteryHistory.map(item => `<div><i></i><span><strong>${esc(this.formatDateOnly(item.replaced_at))}</strong>${item.note ? `<small>${esc(item.note)}</small>` : ""}</span></div>`).join("")}</div>` : ""}</section>` : ""}
+        ${firmware.entityId ? `<section class="drawer-firmware"><div class="drawer-section-title"><h3>${this.t("firmwareStatus")}</h3>${this.firmwareIndicator(device, true)}</div>${row(this.t("installedVersion"), firmware.installedVersion)}${row(this.t("latestVersion"), firmware.latestVersion)}${row(this.t("firmwareEntity"), firmware.entityId, true)}${firmware.inProgress ? `<div class="firmware-progress"><span style="width:${firmware.progress ?? 15}%"></span></div>` : ""}${firmware.disabled ? `<p class="firmware-note warning"><ha-icon icon="mdi:information-outline"></ha-icon>${this.t("firmwareDisabled")}</p><a class="drawer-inline-action firmware-ha-link" href="/config/entities"><ha-icon icon="mdi:home-assistant"></ha-icon>${this.t("homeAssistant")}</a>` : !firmware.available ? `<p class="firmware-note warning"><ha-icon icon="mdi:cloud-off-outline"></ha-icon>${this.t("firmwareUnavailable")}</p>` : firmware.updateAvailable && !firmware.inProgress ? `<button class="drawer-inline-action firmware-action" data-firmware-update="${esc(device.id)}"><ha-icon icon="mdi:update"></ha-icon>${this.t("installFirmware")}</button>` : ""}${firmware.releaseUrl ? `<a class="firmware-release-link" href="${esc(firmware.releaseUrl)}" target="_blank" rel="noopener noreferrer"><ha-icon icon="mdi:open-in-new"></ha-icon>${this.t("releaseNotes")}</a>` : ""}</section>` : ""}
         ${unifi ? `<section><h3>UniFi</h3>${row(this.t("type"), unifi.connection_type)}${row(this.t("firmware"), unifi.firmware_version)}${row(this.t("uplink"), [unifi.uplink_name, unifi.uplink_model, unifi.uplink_ip].filter(Boolean).join(" · "))}${row(this.t("connectedSince"), this.formatDate(unifi.connected_at))}${row(this.t("lastRefresh"), this.formatDate(this.data.integrations?.unifi?.last_refreshed))}</section>` : ""}
         <section><h3>${this.t("identifier")}</h3>${row(this.t("identifier"), device.device_identifier, true)}${row(this.t("haPrimaryEntity"), device.primary_entity_id, true)}${row(this.t("integration"), device.integration)}${device.ha_config_entry_id ? row("Config entry", device.ha_config_entry_id, true) : ""}${device.ha_config_subentry_id ? row("Config subentry", device.ha_config_subentry_id, true) : ""}${row(this.t("comments"), device.comments)}${row(this.t("createdAt"), this.formatDate(device.created_at))}${row(this.t("updatedAt"), this.formatDate(device.updated_at))}</section>
       </div>
@@ -988,6 +1049,7 @@ class NetworkInventoryPanel extends HTMLElement {
     drawer.querySelector("[data-print-label]")?.addEventListener("click", event => this.printLabel(event.currentTarget.dataset.printLabel, event.currentTarget));
     drawer.querySelector("[data-sync-ip]")?.addEventListener("click", event => this.updateInventoryIp(event.currentTarget.dataset.syncIp));
     drawer.querySelector("[data-battery-replace]")?.addEventListener("click", event => this.openBatteryReplacementModal(event.currentTarget.dataset.batteryReplace));
+    drawer.querySelector("[data-firmware-update]")?.addEventListener("click", event => this.openFirmwareUpdateModal(event.currentTarget.dataset.firmwareUpdate));
   }
 
   bindColumnResizers() {
@@ -1157,7 +1219,14 @@ class NetworkInventoryPanel extends HTMLElement {
       (!this.ipFilter || (this.ipFilter === "mismatch" && this.hasIpMismatch(device)) || (this.ipFilter === "duplicate" && this.devicesWithIp(device.ip_address).length > 1)) &&
       (!q || Object.values(device).join(" ").toLowerCase().includes(q))
     );
-    const sortValue = device => this.sortKey === "labels" ? (device.labels || []).join(" ") : device[this.sortKey];
+    const sortValue = device => {
+      if (this.sortKey === "labels") return (device.labels || []).join(" ");
+      if (this.sortKey === "firmware_status") {
+        const info = this.firmwareInfo(device);
+        return info.updateAvailable ? `1 ${info.latestVersion}` : info.inProgress ? "2" : info.entityId ? `3 ${info.installedVersion}` : "4";
+      }
+      return device[this.sortKey];
+    };
     return devices.sort((a, b) => {
       const first = sortValue(a);
       const second = sortValue(b);
@@ -1176,6 +1245,31 @@ class NetworkInventoryPanel extends HTMLElement {
     modal.innerHTML = `<div class="modal-backdrop"><section class="modal battery-modal"><div class="modal-head"><div><h2>${this.t("recordReplacement")}</h2><p>#${esc(device.device_code)} · ${esc(device.name)}</p></div><button type="button" data-close><ha-icon icon="mdi:close"></ha-icon></button></div><form id="battery-replacement-form"><div class="form-grid"><label>${this.t("replacementDate")}<input name="replaced_at" type="date" max="${today}" value="${today}" required></label><label class="full">${this.t("replacementNote")}<textarea name="note" rows="3"></textarea></label></div><div class="modal-actions"><button type="button" class="secondary" data-close>${this.t("cancel")}</button><button type="submit" class="primary"><ha-icon icon="mdi:battery-sync-outline"></ha-icon>${this.t("recordReplacement")}</button></div></form></section></div>`;
     modal.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", () => modal.innerHTML = ""));
     modal.querySelector("#battery-replacement-form").addEventListener("submit", event => this.saveBatteryReplacement(event, deviceId));
+  }
+
+  openFirmwareUpdateModal(deviceId) {
+    const device = this.data.devices.find(item => item.id === deviceId);
+    if (!device) return;
+    const firmware = this.firmwareInfo(device);
+    if (!firmware.entityId || !firmware.available || !firmware.updateAvailable || firmware.inProgress) return;
+    const modal = this.shadowRoot.querySelector("#modal");
+    modal.innerHTML = `<div class="modal-backdrop"><section class="modal firmware-modal"><div class="modal-head"><div><h2>${this.t("confirmFirmwareUpdate")}</h2><p>#${esc(device.device_code)} · ${esc(device.name)}</p></div><button type="button" data-close><ha-icon icon="mdi:close"></ha-icon></button></div><div class="firmware-confirm"><ha-icon icon="mdi:update"></ha-icon><div><strong>${esc(firmware.installedVersion || "—")} <ha-icon icon="mdi:arrow-right"></ha-icon> ${esc(firmware.latestVersion || "—")}</strong><p>${this.t("firmwareRestartWarning")}</p></div></div><div class="modal-actions"><button type="button" class="secondary" data-close>${this.t("cancel")}</button><button type="button" class="primary" data-confirm-firmware-update><ha-icon icon="mdi:update"></ha-icon>${this.t("installFirmware")}</button></div></section></div>`;
+    modal.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", () => modal.innerHTML = ""));
+    modal.querySelector("[data-confirm-firmware-update]").addEventListener("click", event => this.installFirmware(device, event.currentTarget));
+  }
+
+  async installFirmware(device, button) {
+    const firmware = this.firmwareInfo(device);
+    if (!firmware.entityId) return;
+    button.disabled = true;
+    try {
+      await this._hass.callService("update", "install", {}, { entity_id: firmware.entityId });
+      this.shadowRoot.querySelector("#modal").innerHTML = "";
+      this.toast(this.t("firmwareUpdateStarted"));
+    } catch (error) {
+      this.toast(error?.message || this.t("error"), true);
+      button.disabled = false;
+    }
   }
 
   async saveBatteryReplacement(event, deviceId) {
@@ -1525,6 +1619,7 @@ const BASE_CSS = `
   .toolbar{align-items:center;flex-wrap:wrap}.toolbar>select{max-width:180px}.icon-button{width:42px;padding:0}.columns-menu{position:relative}.columns-menu>summary{list-style:none;cursor:pointer}.columns-menu>summary::-webkit-details-marker{display:none}.columns-popover{position:absolute;z-index:20;top:48px;right:0;width:340px;padding:12px;border:1px solid var(--divider-color);border-radius:12px;background:var(--card-background-color);box-shadow:0 14px 38px #0003}.column-list{display:grid;gap:3px;max-height:390px;overflow:auto}.column-option{display:grid;grid-template-columns:24px minmax(0,1fr) 34px;align-items:center;gap:7px;min-height:38px;padding:3px 4px;border-radius:8px}.column-option:hover{background:var(--secondary-background-color)}.column-option.dragging{opacity:.4}.drag-handle{--mdc-icon-size:18px;color:var(--secondary-text-color);cursor:grab}.column-option label{display:flex;align-items:center;gap:8px;font-size:12px}.column-option input{width:16px;height:16px;accent-color:var(--primary-color)}.pin-column{width:32px;height:32px;border-radius:7px;color:var(--secondary-text-color)}.pin-column.active{color:var(--primary-color);background:color-mix(in srgb,var(--primary-color) 12%,transparent)}.density-setting{display:grid;grid-template-columns:1fr repeat(3,auto);align-items:center;gap:4px;margin:10px 0;padding-top:10px;border-top:1px solid var(--divider-color);font-size:11px;color:var(--secondary-text-color)}.density-setting button{padding:7px;border-radius:7px}.density-setting button.active{background:var(--primary-color);color:#fff}.reset-columns{width:100%}
   .device-table th>button{width:calc(100% - 8px);height:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;text-align:left;font-weight:700;color:inherit}.device-table th>button ha-icon{--mdc-icon-size:15px;color:var(--secondary-text-color)}.device-table.density-compact td{height:37px;padding-top:5px;padding-bottom:5px}.device-table.density-comfortable td{height:55px;padding-top:12px;padding-bottom:12px}.device-table .pinned-column{position:sticky;z-index:2;background:var(--card-background-color)}.device-table th.pinned-column{z-index:4}.device-table .select-head{z-index:5}.device-table .select-cell{z-index:3}.device-name-cell{display:inline-flex;align-items:center;max-width:100%;gap:6px}.child-device-icon{--mdc-icon-size:15px;color:var(--secondary-text-color);flex:0 0 auto}.copy-cell{width:26px;height:26px;margin-left:5px;border-radius:6px;vertical-align:middle;opacity:0;color:var(--secondary-text-color)}td:hover>.copy-cell,.copy-cell:focus{opacity:1}.copy-cell:hover{background:var(--secondary-background-color);color:var(--primary-color)}.copy-cell ha-icon{--mdc-icon-size:14px}
   .battery-fields{grid-column:1/-1;border:1px solid var(--divider-color);border-radius:10px;padding:12px;display:grid;grid-template-columns:1.5fr 1fr;gap:12px}.battery-fields legend{font-size:12px;color:var(--secondary-text-color);padding:0 5px}.battery-fields label{display:grid;gap:6px;font-size:12px;color:var(--secondary-text-color)}.battery-fields select,.battery-fields input{width:100%}.battery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}.battery-card{padding:17px;cursor:pointer;transition:transform .15s ease,border-color .15s ease}.battery-card:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--primary-color) 45%,var(--divider-color))}.battery-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding-bottom:15px}.battery-card h3{font-size:16px;margin:5px 0 4px}.battery-card p{font-size:12px;color:var(--secondary-text-color)}.battery-card-details{display:grid;gap:8px;padding:13px 0;border-top:1px solid var(--divider-color);border-bottom:1px solid var(--divider-color)}.battery-card-details>div{display:grid;grid-template-columns:125px minmax(0,1fr);gap:10px}.battery-card-details span{font-size:11px;color:var(--secondary-text-color)}.battery-card-details strong{font-size:11px;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.battery-card-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:13px}.battery-health{font-size:10px;font-weight:750;text-transform:uppercase;letter-spacing:.45px}.battery-health.good{color:#059669}.battery-health.medium{color:#d97706}.battery-health.low{color:#dc2626}.battery-health.unknown{color:var(--secondary-text-color)}.battery-indicator{display:inline-flex;align-items:center;gap:5px;font-size:11px}.battery-indicator ha-icon{--mdc-icon-size:20px}.battery-indicator.large{padding:7px 9px;border-radius:9px;background:var(--secondary-background-color);font-size:14px}.battery-indicator.large ha-icon{--mdc-icon-size:26px}.battery-indicator.good{color:#059669}.battery-indicator.medium{color:#d97706}.battery-indicator.low{color:#dc2626}.battery-indicator.unknown{color:var(--secondary-text-color)}.drawer-section-title{display:flex!important;grid-template-columns:none!important;align-items:center;justify-content:space-between;padding:0 0 7px!important}.drawer-section-title h3{margin:0!important}.battery-action{color:var(--primary-color);background:color-mix(in srgb,var(--primary-color) 10%,var(--card-background-color))}.battery-history{display:block!important;margin-top:15px;padding-top:13px!important;border-top:1px solid var(--divider-color)!important}.battery-history h4{margin:0 0 10px;font-size:12px}.battery-history>div{display:grid!important;grid-template-columns:12px 1fr!important;gap:8px!important;padding:6px 0!important;border:0!important}.battery-history i{width:8px;height:8px;margin-top:4px;border-radius:50%;background:var(--primary-color)}.battery-history span{display:block!important}.battery-history strong{display:block;text-align:left!important}.battery-history small{display:block;margin-top:2px;color:var(--secondary-text-color)}.battery-modal{width:min(540px,100%)}
+  .firmware-indicator{display:inline-flex;align-items:center;gap:6px;max-width:100%;font-size:11px;font-weight:650}.firmware-indicator ha-icon{--mdc-icon-size:18px;flex:0 0 auto}.firmware-indicator.current{color:#059669}.firmware-indicator.update{color:#2563eb}.firmware-indicator.updating{color:#7c3aed}.firmware-indicator.unavailable,.firmware-indicator.disabled{color:var(--secondary-text-color)}.firmware-indicator.large{padding:7px 9px;border-radius:9px;background:var(--secondary-background-color);font-size:11px}.firmware-indicator.large.disabled{max-width:210px}.firmware-action{color:#fff;background:#2563eb}.firmware-action:hover{background:#1d4ed8}.firmware-note{display:flex;align-items:flex-start;gap:7px;margin:12px 0 0;font-size:11px;line-height:1.45;color:var(--secondary-text-color)}.firmware-note ha-icon{--mdc-icon-size:17px;flex:0 0 auto}.firmware-ha-link{text-decoration:none;color:var(--primary-color);background:color-mix(in srgb,var(--primary-color) 10%,var(--card-background-color))}.firmware-release-link{display:flex;align-items:center;gap:6px;width:max-content;margin-top:12px;color:var(--primary-color);font-size:11px;text-decoration:none}.firmware-release-link ha-icon{--mdc-icon-size:15px}.firmware-progress{display:block!important;height:7px;margin-top:13px;padding:0!important;overflow:hidden;border:0!important;border-radius:999px;background:var(--divider-color)}.firmware-progress span{display:block;height:100%;border-radius:inherit;background:var(--primary-color);transition:width .25s ease}.firmware-modal{width:min(560px,100%)}.firmware-confirm{display:flex;align-items:flex-start;gap:16px;padding:24px 22px}.firmware-confirm>ha-icon{--mdc-icon-size:34px;color:#2563eb}.firmware-confirm strong{display:flex;align-items:center;gap:8px;font-size:15px}.firmware-confirm strong ha-icon{--mdc-icon-size:17px;color:var(--secondary-text-color)}.firmware-confirm p{margin-top:9px;color:var(--secondary-text-color);font-size:12px;line-height:1.5}
   .device-drawer{position:fixed;z-index:25;top:0;right:0;bottom:0;width:min(440px,100vw);display:flex;flex-direction:column;background:var(--card-background-color);border-left:1px solid var(--divider-color);box-shadow:-14px 0 40px #0003;transform:translateX(105%);transition:transform .2s ease}.device-drawer.open{transform:translateX(0)}.drawer-head{padding:22px 20px 18px;border-bottom:1px solid var(--divider-color);display:flex;align-items:flex-start;justify-content:space-between;gap:15px}.drawer-head h2{font-size:21px;margin:5px 0 10px}.drawer-head>button{width:38px;height:38px;display:grid;place-items:center;border-radius:8px}.drawer-head>button:hover{background:var(--secondary-background-color)}.drawer-badges{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.drawer-body{flex:1;overflow:auto;padding:14px 20px 24px}.drawer-body section{margin-bottom:14px;padding:16px;border:1px solid var(--divider-color);border-radius:12px;background:color-mix(in srgb,var(--secondary-background-color) 42%,var(--card-background-color))}.drawer-body section h3{margin-bottom:11px}.drawer-body section>div:not(.label-list){display:grid;grid-template-columns:135px minmax(0,1fr);gap:12px;padding:8px 0;border-bottom:1px solid color-mix(in srgb,var(--divider-color) 75%,transparent)}.drawer-body section>div:last-of-type{border-bottom:0}.drawer-body section span{font-size:11px;color:var(--secondary-text-color)}.drawer-body section strong{font-size:12px;text-align:right;overflow-wrap:anywhere}.drawer-body .label-list{margin-top:12px}.drawer-inline-action{width:100%;margin-top:12px;padding:9px;border-radius:8px;display:flex;align-items:center;justify-content:center;gap:7px;color:#b45309;background:#fef3c7}.drawer-warning{display:flex;align-items:flex-start;gap:6px;margin-top:10px;color:var(--error-color,#c62828);font-size:11px}.drawer-warning ha-icon{--mdc-icon-size:16px;flex:0 0 auto}.drawer-actions{padding:14px 16px;border-top:1px solid var(--divider-color);display:flex;justify-content:flex-end;gap:8px;background:var(--card-background-color)}.drawer-actions .drawer-icon-action{width:42px;padding:0;text-decoration:none}.drawer-actions .primary{flex:1}.drawer-scrim{display:none;position:fixed;z-index:24;inset:0;background:#0006}
   @media(max-width:900px){.table-scroll{max-height:calc(100vh - 390px)}.drawer-scrim.open{display:block}}
   @media(max-width:600px){.device-table{display:table}.device-table thead{display:table-header-group}.device-table tbody{display:table-row-group;padding:0}.device-table tr{display:table-row;border:0;padding:0}.device-table th,.device-table td{display:table-cell}.device-table thead{display:table-header-group}.device-table td:first-child{float:none}.table-scroll{max-height:calc(100vh - 470px)}.drawer-head{padding-top:18px}.drawer-actions .secondary:not(.drawer-icon-action){font-size:0;width:42px;padding:0}.drawer-actions .secondary ha-icon{font-size:initial}}

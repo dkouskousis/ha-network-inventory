@@ -17,6 +17,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import label_registry as lr
 
 from .const import DOMAIN, VERSION
+from .firmware import firmware_update_details, select_shelly_firmware_entries
 from .storage import InventoryError, InventoryStore, common_entity_name
 from .unifi import UniFiCloudManager, UniFiError, match_unifi_items
 
@@ -110,6 +111,7 @@ async def websocket_list(
     data["ha_devices"] = _home_assistant_devices(hass, data["devices"])
     data["ha_entities"] = _home_assistant_entities(hass)
     data["battery_entities"] = _battery_entities(hass)
+    firmware_updates = _shelly_firmware_updates(hass)
     battery_by_device: dict[str, list[str]] = {}
     for item in data["battery_entities"]:
         if item["device_id"]:
@@ -122,6 +124,7 @@ async def websocket_list(
     entity_device_ids = {
         item["entity_id"]: item["device_id"] for item in data["ha_entities"]
     }
+    entity_registry = er.async_get(hass)
     for device in data["devices"]:
         if not device.get("battery_entity_id"):
             primary_device_id = entity_device_ids.get(
@@ -135,6 +138,23 @@ async def websocket_list(
         device["battery_level"] = _battery_level(state)
         device["battery_available"] = bool(
             state is not None and state.state not in {"unknown", "unavailable"}
+        )
+        ha_device_id = _inventory_ha_device_id(device, entity_registry)
+        device.update(
+            firmware_updates.get(
+                ha_device_id,
+                {
+                    "firmware_update_entity_id": "",
+                    "firmware_update_disabled": False,
+                    "firmware_update_available": False,
+                    "firmware_update_in_progress": False,
+                    "firmware_update_percentage": None,
+                    "firmware_installed_version": "",
+                    "firmware_latest_version": "",
+                    "firmware_release_url": "",
+                    "firmware_available": False,
+                },
+            )
         )
     data["areas"] = sorted(
         (area.name for area in ar.async_get(hass).async_list_areas()),
@@ -730,6 +750,28 @@ def _battery_level(state: Any) -> float | int | None:
     except (TypeError, ValueError):
         return None
     return int(level) if level.is_integer() else round(level, 1)
+
+
+@callback
+def _inventory_ha_device_id(device: dict[str, Any], registry: Any) -> str:
+    """Resolve the Home Assistant device linked to an inventory item."""
+    primary_entity = registry.async_get(device.get("primary_entity_id", ""))
+    if primary_entity and primary_entity.device_id:
+        return primary_entity.device_id
+    return str(device.get("ha_device_id") or "")
+
+
+@callback
+def _shelly_firmware_updates(hass: HomeAssistant) -> dict[str, dict[str, Any]]:
+    """Return the stable Shelly firmware update entity for each HA device."""
+    registry = er.async_get(hass)
+    updates = {}
+    for device_id, entry in select_shelly_firmware_entries(
+        registry.entities.values()
+    ).items():
+        state = hass.states.get(entry.entity_id)
+        updates[device_id] = firmware_update_details(entry, state)
+    return updates
 
 
 @callback
