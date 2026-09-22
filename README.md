@@ -31,8 +31,8 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - Home Assistant Device Registry support for main and child devices using the current config entry API
 - Battery entity assignment with live percentage, low-battery overview, replacement dates, and permanent replacement history
 - Searchable HA Primary entity selection with automatic, overridable battery-entity matching
-- Automatic Shelly stable-firmware entity matching with live installed/latest versions, update progress, and confirmed one-click OTA installation
-- Native Shelly integration status card with detected-device, firmware-entity, and available-update counts plus direct Home Assistant setup access
+- Automatic Shelly and Reolink firmware entity matching with live installed/latest versions, update progress, and confirmed one-click OTA installation
+- Native Shelly and Reolink integration status cards with detected-device, firmware-entity, and available-update counts plus direct Home Assistant setup access
 - Right-side device details panel with edit, print, UniFi, and delete actions
 - Device-count navigation badge and HACS update availability beside the installed version
 - User-defined device fields with text, number, date, URL, and checkbox types
@@ -106,3 +106,7 @@ Device attachments are stored locally under `.storage/network_inventory/attachme
 Open **Network Inventory → Integrations**, create a read-only API key at [UniFi Site Manager](https://unifi.ui.com/settings/api-keys), and paste it into the UniFi Cloud card. If the account contains more than one site, select the Dream Machine site to activate. The UniFi tab then lists connected clients and adopted UniFi infrastructure. Matching with inventory devices uses the MAC address.
 
 The official UniFi Network API returns currently connected clients. Offline UniFi infrastructure remains visible through the adopted-devices endpoint, while disconnected client devices are not included until they reconnect.
+
+## Shelly and Reolink firmware
+
+Network Inventory uses the official Shelly and Reolink integrations already configured in Home Assistant. It does not connect to either vendor cloud. Imported devices are matched to their Home Assistant Device Registry entry through the stored HA device or primary entity, then linked to the integration's `update.*` entity. Supported devices show installed/latest firmware, availability, progress, release notes, and a confirmed update action in the device drawer.
