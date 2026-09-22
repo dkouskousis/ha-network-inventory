@@ -285,8 +285,9 @@ class NetworkInventoryPanel extends HTMLElement {
     const state = entityId ? this._hass?.states?.[entityId] : null;
     const attributes = state?.attributes || {};
     const rawProgress = attributes.update_percentage ?? (typeof attributes.in_progress === "number" ? attributes.in_progress : null);
-    const progress = Number.isFinite(Number(rawProgress)) ? Math.max(0, Math.min(100, Number(rawProgress))) : null;
-    const inProgress = Boolean(attributes.in_progress) || progress !== null;
+    const hasProgress = rawProgress !== null && rawProgress !== undefined && rawProgress !== "";
+    const progress = hasProgress && Number.isFinite(Number(rawProgress)) ? Math.max(0, Math.min(100, Number(rawProgress))) : null;
+    const inProgress = attributes.in_progress === true || progress !== null;
     const disabled = Boolean(device.firmware_update_disabled && !state);
     const available = Boolean(state && !["unknown", "unavailable"].includes(state.state));
     return {
