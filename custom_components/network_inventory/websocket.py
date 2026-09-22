@@ -19,6 +19,8 @@ from homeassistant.helpers import label_registry as lr
 from .const import DOMAIN, VERSION
 from .firmware import (
     firmware_update_details,
+    reolink_integration_status,
+    select_reolink_firmware_entries,
     select_shelly_firmware_entries,
     shelly_integration_status,
 )
@@ -106,12 +108,21 @@ async def websocket_list(
     if await _manager(hass).async_sync_unifi(unifi_matches):
         data = await _manager(hass).async_snapshot()
         unifi_matches, unifi_items = match_unifi_items(data["devices"], _unifi(hass).items)
-    firmware_updates = _shelly_firmware_updates(hass)
+    shelly_firmware_updates = _shelly_firmware_updates(hass)
+    reolink_firmware_updates = _reolink_firmware_updates(hass)
+    firmware_updates = {**shelly_firmware_updates, **reolink_firmware_updates}
     data["integrations"] = {
         "unifi": _unifi(hass).status(),
         "niimbot": _niimbot_status(hass, data.get("niimbot", {})),
         "shelly": shelly_integration_status(
-            hass.config_entries.async_entries("shelly"), firmware_updates
+            hass.config_entries.async_entries("shelly"),
+            shelly_firmware_updates,
+            _native_integration_device_count(hass, "shelly"),
+        ),
+        "reolink": reolink_integration_status(
+            hass.config_entries.async_entries("reolink"),
+            reolink_firmware_updates,
+            _native_integration_device_count(hass, "reolink"),
         ),
     }
     data["unifi_items"] = unifi_items
@@ -151,6 +162,7 @@ async def websocket_list(
             firmware_updates.get(
                 ha_device_id,
                 {
+                    "firmware_integration": "",
                     "firmware_update_entity_id": "",
                     "firmware_update_disabled": False,
                     "firmware_update_available": False,
@@ -780,6 +792,39 @@ def _shelly_firmware_updates(hass: HomeAssistant) -> dict[str, dict[str, Any]]:
         updates[device_id] = firmware_update_details(entry, state)
     return updates
 
+
+@callback
+def _reolink_firmware_updates(hass: HomeAssistant) -> dict[str, dict[str, Any]]:
+    """Return the Reolink firmware update entity for each HA device."""
+    registry = er.async_get(hass)
+    updates = {}
+    for device_id, entry in select_reolink_firmware_entries(
+        registry.entities.values()
+    ).items():
+        state = hass.states.get(entry.entity_id)
+        updates[device_id] = firmware_update_details(entry, state)
+    return updates
+
+
+@callback
+def _native_integration_device_count(hass: HomeAssistant, domain: str) -> int:
+    """Count Device Registry entries owned by one native integration."""
+    config_entry_ids = {
+        entry.entry_id for entry in hass.config_entries.async_entries(domain)
+    }
+    if not config_entry_ids:
+        return 0
+    registry = dr.async_get(hass)
+    devices = [*registry.devices, *registry.child_devices]
+    count = 0
+    for device in devices:
+        device_entry_ids = set(getattr(device, "config_entries", ()) or ())
+        legacy_entry_id = getattr(device, "config_entry_id", None)
+        if legacy_entry_id:
+            device_entry_ids.add(legacy_entry_id)
+        if device_entry_ids & config_entry_ids:
+            count += 1
+    return count
 
 @callback
 def _home_assistant_devices(
