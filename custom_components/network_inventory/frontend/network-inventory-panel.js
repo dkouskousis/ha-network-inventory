@@ -44,7 +44,13 @@ const TEXT = {
     createdAt: "Created", updatedAt: "Last updated", columns: "Columns", density: "Density", compactDensity: "Compact",
     normalDensity: "Normal", comfortableDensity: "Comfortable", savedViews: "Saved views", saveView: "Save view",
     deleteView: "Delete view", viewName: "View name", results: "results", pin: "Pin", show: "Show", resetColumns: "Reset columns",
-    parentDevice: "Parent device", childDevice: "Child device", mainDevice: "Main device", copied: "Copied"
+    parentDevice: "Parent device", childDevice: "Child device", mainDevice: "Main device", copied: "Copied",
+    batteryPowered: "Battery-powered", batteryLevel: "Battery", batteryEntity: "Battery entity", noBatteryEntity: "No battery entity",
+    lastBatteryChange: "Last battery change", recordReplacement: "Record replacement", batteryHistory: "Battery history",
+    replacementDate: "Replacement date", replacementNote: "Note", batteryDevices: "Battery devices", lowBattery: "Low battery",
+    unavailable: "Unavailable", healthy: "Healthy", attention: "Attention", batteryOverview: "Battery overview",
+    batteryHelp: "Devices with a Battery tag or an assigned battery entity.", replacementSaved: "Battery replacement recorded",
+    noBatteryDevices: "No battery-powered devices found.", never: "Never", noBatteryData: "No live data"
   },
   el: {
     title: "Καταγραφή Συσκευών", overview: "Επισκόπηση", devices: "Συσκευές", newestDevices: "Νεότερες συσκευές", discover: "Discover", homeAssistant: "Home Assistant",
@@ -91,7 +97,13 @@ const TEXT = {
     createdAt: "Δημιουργήθηκε", updatedAt: "Τελευταία ενημέρωση", columns: "Στήλες", density: "Πυκνότητα", compactDensity: "Συμπαγής",
     normalDensity: "Κανονική", comfortableDensity: "Άνετη", savedViews: "Αποθηκευμένες προβολές", saveView: "Αποθήκευση προβολής",
     deleteView: "Διαγραφή προβολής", viewName: "Όνομα προβολής", results: "αποτελέσματα", pin: "Καρφίτσωμα", show: "Εμφάνιση", resetColumns: "Επαναφορά στηλών",
-    parentDevice: "Γονική συσκευή", childDevice: "Child device", mainDevice: "Κύρια συσκευή", copied: "Αντιγράφηκε"
+    parentDevice: "Γονική συσκευή", childDevice: "Child device", mainDevice: "Κύρια συσκευή", copied: "Αντιγράφηκε",
+    batteryPowered: "Με μπαταρία", batteryLevel: "Μπαταρία", batteryEntity: "Entity μπαταρίας", noBatteryEntity: "Χωρίς entity μπαταρίας",
+    lastBatteryChange: "Τελευταία αλλαγή μπαταρίας", recordReplacement: "Καταγραφή αλλαγής", batteryHistory: "Ιστορικό μπαταρίας",
+    replacementDate: "Ημερομηνία αλλαγής", replacementNote: "Σημείωση", batteryDevices: "Συσκευές με μπαταρία", lowBattery: "Χαμηλή μπαταρία",
+    unavailable: "Μη διαθέσιμη", healthy: "Καλή κατάσταση", attention: "Χρειάζεται προσοχή", batteryOverview: "Επισκόπηση μπαταριών",
+    batteryHelp: "Συσκευές με tag Battery ή συνδεδεμένο entity μπαταρίας.", replacementSaved: "Η αλλαγή μπαταρίας καταγράφηκε",
+    noBatteryDevices: "Δεν βρέθηκαν συσκευές που λειτουργούν με μπαταρία.", never: "Ποτέ", noBatteryData: "Χωρίς live δεδομένα"
   }
 };
 
@@ -99,7 +111,7 @@ const COLUMN_WIDTHS_KEY = "network-inventory-column-widths";
 const TABLE_PREFERENCES_KEY = "network-inventory-table-preferences";
 const DEFAULT_COLUMN_WIDTHS = {
   device_code: 90, name: 230, status: 100, device_type: 145, brand: 145, model: 155,
-  area: 135, protocol: 125, mac: 175, ip_address: 135, network: 150, vlan: 90,
+  area: 135, protocol: 125, mac: 175, ip_address: 135, battery_level: 135, network: 150, vlan: 90,
   ssid: 155, connected_device: 175, switch_port: 110, tags: 185
 };
 const DEFAULT_COLUMN_ORDER = Object.keys(DEFAULT_COLUMN_WIDTHS);
@@ -163,6 +175,26 @@ class NetworkInventoryPanel extends HTMLElement {
   set hass(value) {
     this._hass = value;
     this.lang = value?.language?.startsWith("el") ? "el" : "en";
+    if (this.data) {
+      let batteryChanged = false;
+      const updateLevel = item => {
+        const state = value.states?.[item.entity_id || item.battery_entity_id];
+        const level = batteryLevelFromState(state);
+        const available = Boolean(state && !["unknown", "unavailable"].includes(state.state));
+        if (item.level !== undefined) {
+          if (item.level !== level || item.available !== available) batteryChanged = true;
+          item.level = level;
+          item.available = available;
+        } else {
+          if (item.battery_level !== level || item.battery_available !== available) batteryChanged = true;
+          item.battery_level = level;
+          item.battery_available = available;
+        }
+      };
+      this.data.battery_entities?.forEach(updateLevel);
+      this.data.devices.filter(device => device.battery_entity_id).forEach(updateLevel);
+      if (batteryChanged && !this.shadowRoot.querySelector(".modal-backdrop")) this.render();
+    }
     if (this.isConnected && !this._started) this.load();
   }
 
@@ -291,6 +323,7 @@ class NetworkInventoryPanel extends HTMLElement {
   render() {
     const content = this.view === "overview" ? this.renderOverview()
       : this.view === "devices" ? this.renderDevices()
+      : this.view === "batteries" ? this.renderBatteries()
       : this.view === "discover" ? this.renderDiscover()
       : this.view === "integrations" ? this.renderIntegrations()
       : this.view === "logs" ? this.renderLogs()
@@ -305,6 +338,7 @@ class NetworkInventoryPanel extends HTMLElement {
         <nav>
           ${this.nav("overview", "mdi:view-dashboard-outline", "overview")}
           ${this.nav("devices", "mdi:devices", "devices")}
+          ${this.nav("batteries", "mdi:battery-medium", "batteryPowered", this.batteryDevices().length)}
           ${this.nav("discover", "mdi:radar", "discover", this.data.ha_devices.length + (this.data.unifi_items?.filter(item => !item.inventory_id).length || 0))}
           ${this.nav("integrations", "mdi:connection", "integrations")}
           ${this.nav("logs", "mdi:history", "logs", this.data.logs?.length || null)}
@@ -362,6 +396,45 @@ class NetworkInventoryPanel extends HTMLElement {
   deviceMiniList(devices) {
     if (!devices.length) return `<p class="muted">${this.t("empty")}</p>`;
     return `<div class="mini-list">${devices.map(d => `<button data-edit="${d.id}"><span class="code">${d.device_code}</span><span><strong>${esc(d.name)}</strong><small>${esc(d.area || d.brand || this.t("manual"))}</small></span><ha-icon icon="mdi:chevron-right"></ha-icon></button>`).join("")}</div>`;
+  }
+
+  batteryDevices() {
+    return this.data.devices.filter(device =>
+      Boolean(device.battery_entity_id) || (device.tags || []).some(tag => tag.toLowerCase() === "battery")
+    );
+  }
+
+  renderBatteries() {
+    const devices = this.batteryDevices().sort((a, b) => {
+      const first = a.battery_level ?? 101;
+      const second = b.battery_level ?? 101;
+      return first - second || a.name.localeCompare(b.name);
+    });
+    const low = devices.filter(device => device.battery_level !== null && device.battery_level <= 20).length;
+    const unavailable = devices.filter(device => device.battery_entity_id && !device.battery_available).length;
+    const withoutEntity = devices.filter(device => !device.battery_entity_id).length;
+    const activeDevice = this.data.devices.find(device => device.id === this.activeDeviceId);
+    return `<section class="section-head"><div><h2>${this.t("batteryOverview")}</h2><p>${this.t("batteryHelp")}</p></div></section>
+      <section class="stats battery-stats">
+        ${this.stat("mdi:battery", this.t("batteryDevices"), devices.length, "green")}
+        ${this.stat("mdi:battery-alert", this.t("lowBattery"), low, "orange")}
+        ${this.stat("mdi:battery-unknown", this.t("unavailable"), unavailable, "purple")}
+        ${this.stat("mdi:link-off", this.t("noBatteryEntity"), withoutEntity, "blue")}
+      </section>
+      <section class="battery-grid">${devices.map(device => this.batteryCard(device)).join("")}</section>
+      ${devices.length ? "" : `<div class="empty standalone"><ha-icon icon="mdi:battery-off-outline"></ha-icon><p>${this.t("noBatteryDevices")}</p></div>`}
+      <button class="drawer-scrim ${activeDevice ? "open" : ""}" data-close-drawer aria-label="${this.t("cancel")}"></button>
+      <aside id="device-drawer" class="device-drawer ${activeDevice ? "open" : ""}">${activeDevice ? this.renderDeviceDrawer(activeDevice) : ""}</aside>`;
+  }
+
+  batteryCard(device) {
+    const level = device.battery_level;
+    const tone = level === null ? "unknown" : level <= 20 ? "low" : level <= 40 ? "medium" : "good";
+    return `<article class="battery-card card" data-device-row="${esc(device.id)}" tabindex="0">
+      <div class="battery-card-head"><div><span class="code">#${esc(device.device_code)}</span><h3>${esc(device.name)}</h3><p>${esc([device.area, device.device_type].filter(Boolean).join(" · "))}</p></div>${this.batteryIndicator(device, true)}</div>
+      <div class="battery-card-details"><div><span>${this.t("batteryEntity")}</span><strong class="mono">${esc(device.battery_entity_id || this.t("noBatteryEntity"))}</strong></div><div><span>${this.t("lastBatteryChange")}</span><strong>${esc(device.battery_last_replaced_at ? formatDateOnly(device.battery_last_replaced_at) : this.t("never"))}</strong></div></div>
+      <div class="battery-card-actions"><span class="battery-health ${tone}">${this.t(tone === "good" ? "healthy" : tone === "unknown" ? "noBatteryData" : "attention")}</span><button class="secondary compact" data-battery-replace="${esc(device.id)}"><ha-icon icon="mdi:battery-sync-outline"></ha-icon>${this.t("recordReplacement")}</button></div>
+    </article>`;
   }
 
   renderDevices() {
@@ -437,6 +510,7 @@ class NetworkInventoryPanel extends HTMLElement {
       { key: "brand", label: this.t("brand") }, { key: "model", label: this.t("model") },
       { key: "area", label: this.t("area") }, { key: "protocol", label: this.t("protocol") },
       { key: "mac", label: this.t("address") }, { key: "ip_address", label: this.t("ip") },
+      { key: "battery_level", label: this.t("batteryLevel") },
       { key: "network", label: this.t("network") }, { key: "vlan", label: this.t("vlan") },
       { key: "ssid", label: this.t("ssid") }, { key: "connected_device", label: this.t("connectedDevice") },
       { key: "switch_port", label: this.t("switchPort") }, { key: "tags", label: this.t("tags") }
@@ -468,8 +542,17 @@ class NetworkInventoryPanel extends HTMLElement {
       return `<span class="pill" style="--pill:${safeColor(protocol.color)}">${esc(protocol.label)}</span>`;
     }
     if (key === "mac" || key === "ip_address") return `<span>${esc(value || "—")}</span>${value ? `<button class="copy-cell" data-copy="${esc(value)}"><ha-icon icon="mdi:content-copy"></ha-icon></button>` : ""}`;
+    if (key === "battery_level") return device.battery_entity_id || (device.tags || []).some(tag => tag.toLowerCase() === "battery") ? this.batteryIndicator(device) : "—";
     if (key === "tags") return this.tagChips(device.tags);
     return esc(value || "—");
+  }
+
+  batteryIndicator(device, large = false) {
+    const level = device.battery_level;
+    if (level === null || level === undefined) return `<span class="battery-indicator unknown ${large ? "large" : ""}" title="${this.t("noBatteryData")}"><ha-icon icon="mdi:battery-unknown"></ha-icon><b>—</b></span>`;
+    const tone = level <= 20 ? "low" : level <= 40 ? "medium" : "good";
+    const icon = level <= 10 ? "mdi:battery-10" : level <= 20 ? "mdi:battery-20" : level <= 40 ? "mdi:battery-40" : level <= 60 ? "mdi:battery-60" : level <= 80 ? "mdi:battery-80" : "mdi:battery";
+    return `<span class="battery-indicator ${tone} ${large ? "large" : ""}"><ha-icon icon="${icon}"></ha-icon><b>${esc(level)}%</b></span>`;
   }
 
   statusBadge(status) {
@@ -482,11 +565,14 @@ class NetworkInventoryPanel extends HTMLElement {
     const protocol = this.data.protocols[device.protocol] || { label: device.protocol, color: "#64748b" };
     const mismatch = this.hasIpMismatch(device);
     const duplicates = this.devicesWithIp(device.ip_address).filter(item => item.id !== device.id);
+    const batteryPowered = Boolean(device.battery_entity_id) || (device.tags || []).some(tag => tag.toLowerCase() === "battery");
+    const batteryHistory = [...(device.battery_history || [])].reverse();
     const row = (label, value, mono = false) => `<div><span>${label}</span><strong class="${mono ? "mono" : ""}">${esc(value || "—")}</strong></div>`;
     return `<div class="drawer-head"><div><span class="code">#${esc(device.device_code)}</span><h2>${esc(device.name)}</h2><div class="drawer-badges">${this.statusBadge(device.status)}<span class="pill" style="--pill:${safeColor(protocol.color)}">${esc(protocol.label)}</span>${unifi ? `<span class="unifi-badge"><ha-icon icon="mdi:access-point-network"></ha-icon>UniFi</span>` : ""}</div></div><button data-close-drawer title="${this.t("cancel")}"><ha-icon icon="mdi:close"></ha-icon></button></div>
       <div class="drawer-body">
         <section><h3>${this.t("details")}</h3>${row(this.t("type"), device.device_type)}${row(this.t("brand"), device.brand)}${row(this.t("model"), device.model)}${row(this.t("area"), device.area)}${device.ha_device_kind ? row(this.t("homeAssistant"), this.t(device.ha_device_kind === "child" ? "childDevice" : "mainDevice")) : ""}${device.parent_device_name ? row(this.t("parentDevice"), device.parent_device_name) : ""}${this.tagChips(device.tags)}</section>
         <section><h3>${this.t("networkDetails")}</h3>${row(this.t("address"), device.mac, true)}${row(this.t("ip"), device.ip_address, true)}${row(this.t("network"), device.network)}${row(this.t("vlan"), device.vlan)}${row(this.t("ssid"), device.ssid)}${row(this.t("connectedDevice"), device.connected_device)}${row(this.t("switchPort"), device.switch_port)}${mismatch ? `<button class="drawer-inline-action" data-sync-ip="${esc(device.id)}"><ha-icon icon="mdi:sync"></ha-icon>${this.t(device.ip_address ? "updateInventoryIp" : "addInventoryIp")} · ${esc(unifi.ip_address)}</button>` : ""}${duplicates.length ? `<p class="drawer-warning"><ha-icon icon="mdi:alert-circle-outline"></ha-icon>${this.t("sharedWith")}: ${esc(duplicates.map(item => `#${item.device_code} ${item.name}`).join(", "))}</p>` : ""}</section>
+        ${batteryPowered ? `<section class="drawer-battery"><div class="drawer-section-title"><h3>${this.t("batteryPowered")}</h3>${this.batteryIndicator(device, true)}</div>${row(this.t("batteryEntity"), device.battery_entity_id || this.t("noBatteryEntity"), true)}${row(this.t("lastBatteryChange"), device.battery_last_replaced_at ? formatDateOnly(device.battery_last_replaced_at) : this.t("never"))}<button class="drawer-inline-action battery-action" data-battery-replace="${esc(device.id)}"><ha-icon icon="mdi:battery-sync-outline"></ha-icon>${this.t("recordReplacement")}</button>${batteryHistory.length ? `<div class="battery-history"><h4>${this.t("batteryHistory")}</h4>${batteryHistory.map(item => `<div><i></i><span><strong>${esc(formatDateOnly(item.replaced_at))}</strong>${item.note ? `<small>${esc(item.note)}</small>` : ""}</span></div>`).join("")}</div>` : ""}</section>` : ""}
         ${unifi ? `<section><h3>UniFi</h3>${row(this.t("type"), unifi.connection_type)}${row(this.t("firmware"), unifi.firmware_version)}${row(this.t("uplink"), [unifi.uplink_name, unifi.uplink_model, unifi.uplink_ip].filter(Boolean).join(" · "))}${row(this.t("connectedSince"), formatDate(unifi.connected_at))}${row(this.t("lastRefresh"), formatDate(this.data.integrations?.unifi?.last_refreshed))}</section>` : ""}
         <section><h3>${this.t("identifier")}</h3>${row(this.t("identifier"), device.device_identifier, true)}${row(this.t("entityName"), device.entity_name, true)}${row(this.t("integration"), device.integration)}${device.ha_config_entry_id ? row("Config entry", device.ha_config_entry_id, true) : ""}${device.ha_config_subentry_id ? row("Config subentry", device.ha_config_subentry_id, true) : ""}${row(this.t("comments"), device.comments)}${row(this.t("createdAt"), formatDate(device.created_at))}${row(this.t("updatedAt"), formatDate(device.updated_at))}</section>
       </div>
@@ -557,14 +643,14 @@ class NetworkInventoryPanel extends HTMLElement {
 
   renderLogs() {
     const logs = [...(this.data.logs || [])].reverse();
-    const actionLabel = action => ({ add: this.t("addDevice"), update: this.t("edit"), bulk_update: this.t("bulkEdit"), delete: this.t("delete"), import: this.t("import"), restore: this.t("restore"), settings: this.t("settings") }[action] || action);
+    const actionLabel = action => ({ add: this.t("addDevice"), update: this.t("edit"), bulk_update: this.t("bulkEdit"), battery_replaced: this.t("recordReplacement"), delete: this.t("delete"), import: this.t("import"), restore: this.t("restore"), settings: this.t("settings") }[action] || action);
     return `<section class="section-head"><div><h2>${this.t("logs")}</h2><p>${logs.length} ${this.t("logAction").toLowerCase()}</p></div></section>
       <section class="log-list">${logs.map(log => `<article class="card log-entry"><div class="log-icon ${esc(log.action)}"><ha-icon icon="${log.action === "delete" ? "mdi:delete-outline" : log.action === "restore" ? "mdi:backup-restore" : "mdi:pencil-outline"}"></ha-icon></div><div class="grow"><div class="log-title"><strong>${esc(actionLabel(log.action))}</strong>${log.device_name ? `<span>#${esc(log.device_code)} · ${esc(log.device_name)}</span>` : ""}</div><small>${esc(formatDate(log.timestamp))} · ${esc(log.source || "manual")}</small>${log.details ? `<p>${esc(log.details)}</p>` : ""}<div class="change-list">${(log.changes || []).map(change => `<div><b>${esc(this.fieldLabel(change.field))}</b><span>${esc(displayValue(change.old))}</span><ha-icon icon="mdi:arrow-right"></ha-icon><span>${esc(displayValue(change.new))}</span></div>`).join("")}</div></div></article>`).join("")}</section>
       ${logs.length ? "" : `<div class="empty standalone"><ha-icon icon="mdi:history"></ha-icon><p>${this.t("noLogs")}</p></div>`}`;
   }
 
   fieldLabel(fieldName) {
-    const labels = { name:"name", device_type:"type", brand:"brand", model:"model", area:"area", mac:"address", ip_address:"ip", protocol:"protocol", device_identifier:"identifier", entity_name:"entityName", comments:"comments", status:"status", network:"network", vlan:"vlan", ssid:"ssid", connected_device:"connectedDevice", switch_port:"switchPort", tags:"tags" };
+    const labels = { name:"name", device_type:"type", brand:"brand", model:"model", area:"area", mac:"address", ip_address:"ip", protocol:"protocol", device_identifier:"identifier", entity_name:"entityName", comments:"comments", status:"status", battery_entity_id:"batteryEntity", battery_last_replaced_at:"lastBatteryChange", battery_history:"batteryHistory", network:"network", vlan:"vlan", ssid:"ssid", connected_device:"connectedDevice", switch_port:"switchPort", tags:"tags" };
     return this.t(labels[fieldName] || fieldName);
   }
 
@@ -614,6 +700,7 @@ class NetworkInventoryPanel extends HTMLElement {
 
   bindBaseEvents() {
     this.shadowRoot.querySelectorAll("[data-view]").forEach(button => button.addEventListener("click", () => {
+      this.activeDeviceId = null;
       this.view = button.dataset.view; this.render();
     }));
     this.shadowRoot.querySelectorAll("[data-subnav-group]").forEach(button => button.addEventListener("click", () => {
@@ -718,6 +805,11 @@ class NetworkInventoryPanel extends HTMLElement {
     }));
     this.shadowRoot.querySelectorAll("[data-print-label]").forEach(button => button.addEventListener("click", () => {
       if (!button.closest("#device-drawer")) this.printLabel(button.dataset.printLabel, button);
+    }));
+    this.shadowRoot.querySelectorAll("[data-battery-replace]").forEach(button => button.addEventListener("click", event => {
+      if (button.closest("#device-drawer")) return;
+      event.stopPropagation();
+      this.openBatteryReplacementModal(button.dataset.batteryReplace);
     }));
     this.shadowRoot.querySelector("#unifi-connect-form")?.addEventListener("submit", event => this.connectUnifi(event));
     this.shadowRoot.querySelector("#unifi-site-form")?.addEventListener("submit", event => this.selectUnifiSite(event));
@@ -844,6 +936,7 @@ class NetworkInventoryPanel extends HTMLElement {
     drawer.querySelector("[data-delete]")?.addEventListener("click", event => this.deleteDevice(event.currentTarget.dataset.delete));
     drawer.querySelector("[data-print-label]")?.addEventListener("click", event => this.printLabel(event.currentTarget.dataset.printLabel, event.currentTarget));
     drawer.querySelector("[data-sync-ip]")?.addEventListener("click", event => this.updateInventoryIp(event.currentTarget.dataset.syncIp));
+    drawer.querySelector("[data-battery-replace]")?.addEventListener("click", event => this.openBatteryReplacementModal(event.currentTarget.dataset.batteryReplace));
   }
 
   bindColumnResizers() {
@@ -1024,6 +1117,28 @@ class NetworkInventoryPanel extends HTMLElement {
     });
   }
 
+  openBatteryReplacementModal(deviceId) {
+    const device = this.data.devices.find(item => item.id === deviceId);
+    if (!device) return;
+    const today = localDateValue(new Date());
+    const modal = this.shadowRoot.querySelector("#modal");
+    modal.innerHTML = `<div class="modal-backdrop"><section class="modal battery-modal"><div class="modal-head"><div><h2>${this.t("recordReplacement")}</h2><p>#${esc(device.device_code)} · ${esc(device.name)}</p></div><button type="button" data-close><ha-icon icon="mdi:close"></ha-icon></button></div><form id="battery-replacement-form"><div class="form-grid"><label>${this.t("replacementDate")}<input name="replaced_at" type="date" max="${today}" value="${today}" required></label><label class="full">${this.t("replacementNote")}<textarea name="note" rows="3"></textarea></label></div><div class="modal-actions"><button type="button" class="secondary" data-close>${this.t("cancel")}</button><button type="submit" class="primary"><ha-icon icon="mdi:battery-sync-outline"></ha-icon>${this.t("recordReplacement")}</button></div></form></section></div>`;
+    modal.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", () => modal.innerHTML = ""));
+    modal.querySelector("#battery-replacement-form").addEventListener("submit", event => this.saveBatteryReplacement(event, deviceId));
+  }
+
+  async saveBatteryReplacement(event, deviceId) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = Object.fromEntries(new FormData(form).entries());
+    this.setBusy(form, true);
+    try {
+      await this._hass.callWS({ type: "network_inventory/battery_replaced", device_id: deviceId, replaced_at: values.replaced_at, note: values.note.trim() });
+      this.shadowRoot.querySelector("#modal").innerHTML = "";
+      await this.reload(this.t("replacementSaved"));
+    } catch (error) { this.toast(error?.message || this.t("error"), true); this.setBusy(form, false); }
+  }
+
   openBulkEditModal() {
     if (!this.selectedDevices.size) return;
     const selectOptions = values => values.map(value => `<option value="${esc(value)}">${esc(value)}</option>`).join("");
@@ -1087,6 +1202,15 @@ class NetworkInventoryPanel extends HTMLElement {
     const isEdit = Boolean(device && !isImport);
     const isChildDevice = device?.ha_device_kind === "child";
     const ipRequired = !isChildDevice && ["wifi", "ethernet"].includes(device?.protocol || "wifi");
+    const batteryEntities = [...(this.data.battery_entities || [])].sort((a, b) => {
+      const aRelated = a.device_id && a.device_id === device?.ha_device_id ? 1 : 0;
+      const bRelated = b.device_id && b.device_id === device?.ha_device_id ? 1 : 0;
+      return bRelated - aRelated || a.name.localeCompare(b.name);
+    });
+    const missingBatteryEntity = device?.battery_entity_id && !batteryEntities.some(entity => entity.entity_id === device.battery_entity_id)
+      ? `<option value="${esc(device.battery_entity_id)}" selected>${esc(device.battery_entity_id)} · ${this.t("unavailable")}</option>`
+      : "";
+    const batteryOptions = missingBatteryEntity + batteryEntities.map(entity => `<option value="${esc(entity.entity_id)}" ${device?.battery_entity_id === entity.entity_id ? "selected" : ""}>${entity.device_id === device?.ha_device_id ? "★ " : ""}${esc(entity.name)} · ${esc(entity.entity_id)}${entity.level !== null ? ` · ${esc(entity.level)}%` : ""}</option>`).join("");
     const modal = this.shadowRoot.querySelector("#modal");
     modal.innerHTML = `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><div><h2>${isEdit ? this.t("edit") : this.t("addDevice")}</h2><p>${isEdit ? `${this.t("code")}: ${device.device_code}` : this.t("autoId")}</p></div><button type="button" data-close><ha-icon icon="mdi:close"></ha-icon></button></div>
       <form id="device-form"><div class="form-grid">
@@ -1100,6 +1224,7 @@ class NetworkInventoryPanel extends HTMLElement {
         ${field("device_identifier", this.t("identifier"), device?.device_identifier)}${field("entity_name", this.t("entityName"), device?.entity_name)}
         ${field("integration", this.t("integration"), device?.integration)}
         <label>${this.t("status")}<select name="status"><option value="unknown">${this.t("unknown")}</option><option value="online" ${device?.status === "online" ? "selected" : ""}>Online</option><option value="offline" ${device?.status === "offline" ? "selected" : ""}>Offline</option></select></label>
+        <fieldset class="full battery-fields"><legend>${this.t("batteryPowered")}</legend><label>${this.t("batteryEntity")}<select name="battery_entity_id"><option value="">${this.t("noBatteryEntity")}</option>${batteryOptions}</select></label><label>${this.t("lastBatteryChange")}<input name="battery_last_replaced_at" type="date" value="${esc(device?.battery_last_replaced_at || "")}"></label></fieldset>
         <fieldset class="full network-fields"><legend>${this.t("networkDetails")}</legend>${field("network", this.t("network"), device?.network)}${field("vlan", this.t("vlan"), device?.vlan)}${field("ssid", this.t("ssid"), device?.ssid)}${field("connected_device", this.t("connectedDevice"), device?.connected_device)}${field("switch_port", this.t("switchPort"), device?.switch_port)}</fieldset>
         <label class="full">${this.t("tags")}<details class="tag-picker"><summary>${selectedTags.size ? esc([...selectedTags].join(", ")) : this.t("tags")}</summary><div>${tagOptions || `<small>${this.t("tagSettings")}</small>`}</div></details></label>
         <label class="full">${this.t("comments")}<textarea name="comments" rows="3">${esc(device?.comments || "")}</textarea></label>
@@ -1151,8 +1276,8 @@ class NetworkInventoryPanel extends HTMLElement {
   }
 
   exportCsv() {
-    const headers = ["Device Code","MAC / IEEE Address","Device IP","Device Type","Brand","Area","Device Name","Device ID","Entity Name","Comments","Protocol","Network","VLAN","SSID","AP / Switch","Switch Port","Tags"];
-    const keys = ["device_code","mac","ip_address","device_type","brand","area","name","device_identifier","entity_name","comments","protocol","network","vlan","ssid","connected_device","switch_port","tags"];
+    const headers = ["Device Code","MAC / IEEE Address","Device IP","Device Type","Brand","Area","Device Name","Device ID","Entity Name","Comments","Protocol","Network","VLAN","SSID","AP / Switch","Switch Port","Tags","Battery Entity","Last Battery Change"];
+    const keys = ["device_code","mac","ip_address","device_type","brand","area","name","device_identifier","entity_name","comments","protocol","network","vlan","ssid","connected_device","switch_port","tags","battery_entity_id","battery_last_replaced_at"];
     const lines = [headers, ...this.data.devices.sort((a,b) => a.device_code-b.device_code).map(d => keys.map(k => Array.isArray(d[k]) ? d[k].join(";") : (d[k] ?? "")))];
     const csv = lines.map(row => row.map(csvCell).join(",")).join("\r\n");
     const link = document.createElement("a");
@@ -1237,6 +1362,9 @@ function esc(value) {
 
 function safeColor(value) { return /^#[0-9a-f]{6}$/i.test(value || "") ? value : "#64748b"; }
 function formatDate(value) { if (!value) return ""; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString(); }
+function formatDateOnly(value) { if (!value) return ""; const date = new Date(`${value}T00:00:00`); return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(); }
+function localDateValue(date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
+function batteryLevelFromState(state) { if (!state || ["unknown", "unavailable"].includes(state.state)) return null; const level = Number(state.state); return Number.isFinite(level) ? Math.max(0, Math.min(100, Math.round(level * 10) / 10)) : null; }
 function displayValue(value) { if (Array.isArray(value)) return value.join(", ") || "—"; if (value && typeof value === "object") return JSON.stringify(value); return String(value ?? "") || "—"; }
 function csvCell(value) { const text = String(value ?? ""); return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; }
 function wrapForm(node) { const form = document.createElement("form"); [...node.querySelectorAll("input,select,textarea")].forEach(el => form.append(el.cloneNode(true))); return form; }
@@ -1270,7 +1398,8 @@ function csvToDevices(text) {
     entity_name: find("entityname"),
     comments: find("comments", "notes"), protocol: find("protocol", "connection"),
     network: find("network", "networkname"), vlan: find("vlan", "vlanid"), ssid: find("ssid"),
-    connected_device: find("apswitch", "connecteddevice", "uplink"), switch_port: find("switchport", "port"), tags: find("tags")
+    connected_device: find("apswitch", "connecteddevice", "uplink"), switch_port: find("switchport", "port"), tags: find("tags"),
+    battery_entity_id: find("batteryentity", "batteryentityid"), battery_last_replaced_at: find("lastbatterychange", "batterylastreplacedat")
   };
   if (index.protocol < 0 && rows[0].length >= 10 && rows[0].length <= 11) index.protocol = rows[0].length - 1;
   return rows.slice(1).map(row => {
@@ -1298,9 +1427,11 @@ const BASE_CSS = `
   .table-card{border-radius:10px}.table-scroll{overflow:auto;max-height:calc(100vh - 330px);min-height:260px}.device-table{table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:12px}.device-table th{position:sticky;top:0;z-index:3;width:auto;height:43px;padding:0 12px;background:var(--card-background-color);border-bottom:1px solid var(--divider-color);white-space:nowrap;text-transform:none;font-size:11px;letter-spacing:0}.device-table th:not(:last-child),.device-table td:not(:last-child){border-right:1px solid color-mix(in srgb,var(--divider-color) 55%,transparent)}.device-table td{height:45px;padding:8px 12px;border-top:0;border-bottom:1px solid var(--divider-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}.device-table .select-head,.device-table .select-cell{position:sticky;left:0;z-index:4;padding:0;text-align:center;background:var(--card-background-color)}.device-table .select-cell{z-index:2}.device-table tbody tr{cursor:pointer;outline:none}.device-table tbody tr:hover td,.device-table tbody tr:hover .select-cell{background:color-mix(in srgb,var(--primary-color) 6%,var(--card-background-color))}.device-table tbody tr.active td,.device-table tbody tr.active .select-cell{background:color-mix(in srgb,var(--primary-color) 12%,var(--card-background-color))}.device-table tbody tr.active td:first-child{box-shadow:inset 3px 0 var(--primary-color)}.device-table .tag-list{margin:0;flex-wrap:nowrap;overflow:hidden}.device-table .tag-list span{flex:0 0 auto}.device-name-cell strong{display:inline-block;max-width:calc(100% - 18px);overflow:hidden;text-overflow:ellipsis;vertical-align:middle}.unifi-dot{display:inline-block;width:7px;height:7px;margin-left:7px;border-radius:50%;background:#0ea5e9;vertical-align:middle}.column-resizer{position:absolute;z-index:5;top:0;right:-4px;width:9px;height:100%;cursor:col-resize;touch-action:none}.column-resizer:hover,.column-resizer:active{background:color-mix(in srgb,var(--primary-color) 45%,transparent)}.device-status{display:inline-flex;align-items:center;gap:6px;text-transform:capitalize}.device-status i{width:7px;height:7px;border-radius:50%;background:#94a3b8}.device-status.online i{background:#22c55e}.device-status.offline i{background:#ef4444}
   .toolbar{align-items:center;flex-wrap:wrap}.toolbar>select{max-width:180px}.icon-button{width:42px;padding:0}.columns-menu{position:relative}.columns-menu>summary{list-style:none;cursor:pointer}.columns-menu>summary::-webkit-details-marker{display:none}.columns-popover{position:absolute;z-index:20;top:48px;right:0;width:340px;padding:12px;border:1px solid var(--divider-color);border-radius:12px;background:var(--card-background-color);box-shadow:0 14px 38px #0003}.column-list{display:grid;gap:3px;max-height:390px;overflow:auto}.column-option{display:grid;grid-template-columns:24px minmax(0,1fr) 34px;align-items:center;gap:7px;min-height:38px;padding:3px 4px;border-radius:8px}.column-option:hover{background:var(--secondary-background-color)}.column-option.dragging{opacity:.4}.drag-handle{--mdc-icon-size:18px;color:var(--secondary-text-color);cursor:grab}.column-option label{display:flex;align-items:center;gap:8px;font-size:12px}.column-option input{width:16px;height:16px;accent-color:var(--primary-color)}.pin-column{width:32px;height:32px;border-radius:7px;color:var(--secondary-text-color)}.pin-column.active{color:var(--primary-color);background:color-mix(in srgb,var(--primary-color) 12%,transparent)}.density-setting{display:grid;grid-template-columns:1fr repeat(3,auto);align-items:center;gap:4px;margin:10px 0;padding-top:10px;border-top:1px solid var(--divider-color);font-size:11px;color:var(--secondary-text-color)}.density-setting button{padding:7px;border-radius:7px}.density-setting button.active{background:var(--primary-color);color:#fff}.reset-columns{width:100%}
   .device-table th>button{width:calc(100% - 8px);height:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;text-align:left;font-weight:700;color:inherit}.device-table th>button ha-icon{--mdc-icon-size:15px;color:var(--secondary-text-color)}.device-table.density-compact td{height:37px;padding-top:5px;padding-bottom:5px}.device-table.density-comfortable td{height:55px;padding-top:12px;padding-bottom:12px}.device-table .pinned-column{position:sticky;z-index:2;background:var(--card-background-color)}.device-table th.pinned-column{z-index:4}.device-table .select-head{z-index:5}.device-table .select-cell{z-index:3}.device-name-cell{display:inline-flex;align-items:center;max-width:100%;gap:6px}.child-device-icon{--mdc-icon-size:15px;color:var(--secondary-text-color);flex:0 0 auto}.copy-cell{width:26px;height:26px;margin-left:5px;border-radius:6px;vertical-align:middle;opacity:0;color:var(--secondary-text-color)}td:hover>.copy-cell,.copy-cell:focus{opacity:1}.copy-cell:hover{background:var(--secondary-background-color);color:var(--primary-color)}.copy-cell ha-icon{--mdc-icon-size:14px}
+  .battery-fields{grid-column:1/-1;border:1px solid var(--divider-color);border-radius:10px;padding:12px;display:grid;grid-template-columns:1.5fr 1fr;gap:12px}.battery-fields legend{font-size:12px;color:var(--secondary-text-color);padding:0 5px}.battery-fields label{display:grid;gap:6px;font-size:12px;color:var(--secondary-text-color)}.battery-fields select,.battery-fields input{width:100%}.battery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}.battery-card{padding:17px;cursor:pointer;transition:transform .15s ease,border-color .15s ease}.battery-card:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--primary-color) 45%,var(--divider-color))}.battery-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding-bottom:15px}.battery-card h3{font-size:16px;margin:5px 0 4px}.battery-card p{font-size:12px;color:var(--secondary-text-color)}.battery-card-details{display:grid;gap:8px;padding:13px 0;border-top:1px solid var(--divider-color);border-bottom:1px solid var(--divider-color)}.battery-card-details>div{display:grid;grid-template-columns:125px minmax(0,1fr);gap:10px}.battery-card-details span{font-size:11px;color:var(--secondary-text-color)}.battery-card-details strong{font-size:11px;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.battery-card-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:13px}.battery-health{font-size:10px;font-weight:750;text-transform:uppercase;letter-spacing:.45px}.battery-health.good{color:#059669}.battery-health.medium{color:#d97706}.battery-health.low{color:#dc2626}.battery-health.unknown{color:var(--secondary-text-color)}.battery-indicator{display:inline-flex;align-items:center;gap:5px;font-size:11px}.battery-indicator ha-icon{--mdc-icon-size:20px}.battery-indicator.large{padding:7px 9px;border-radius:9px;background:var(--secondary-background-color);font-size:14px}.battery-indicator.large ha-icon{--mdc-icon-size:26px}.battery-indicator.good{color:#059669}.battery-indicator.medium{color:#d97706}.battery-indicator.low{color:#dc2626}.battery-indicator.unknown{color:var(--secondary-text-color)}.drawer-section-title{display:flex!important;grid-template-columns:none!important;align-items:center;justify-content:space-between;padding:0 0 7px!important}.drawer-section-title h3{margin:0!important}.battery-action{color:var(--primary-color);background:color-mix(in srgb,var(--primary-color) 10%,var(--card-background-color))}.battery-history{display:block!important;margin-top:15px;padding-top:13px!important;border-top:1px solid var(--divider-color)!important}.battery-history h4{margin:0 0 10px;font-size:12px}.battery-history>div{display:grid!important;grid-template-columns:12px 1fr!important;gap:8px!important;padding:6px 0!important;border:0!important}.battery-history i{width:8px;height:8px;margin-top:4px;border-radius:50%;background:var(--primary-color)}.battery-history span{display:block!important}.battery-history strong{display:block;text-align:left!important}.battery-history small{display:block;margin-top:2px;color:var(--secondary-text-color)}.battery-modal{width:min(540px,100%)}
   .device-drawer{position:fixed;z-index:25;top:0;right:0;bottom:0;width:min(440px,100vw);display:flex;flex-direction:column;background:var(--card-background-color);border-left:1px solid var(--divider-color);box-shadow:-14px 0 40px #0003;transform:translateX(105%);transition:transform .2s ease}.device-drawer.open{transform:translateX(0)}.drawer-head{padding:22px 20px 18px;border-bottom:1px solid var(--divider-color);display:flex;align-items:flex-start;justify-content:space-between;gap:15px}.drawer-head h2{font-size:21px;margin:5px 0 10px}.drawer-head>button{width:38px;height:38px;display:grid;place-items:center;border-radius:8px}.drawer-head>button:hover{background:var(--secondary-background-color)}.drawer-badges{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.drawer-body{flex:1;overflow:auto;padding:14px 20px 24px}.drawer-body section{margin-bottom:14px;padding:16px;border:1px solid var(--divider-color);border-radius:12px;background:color-mix(in srgb,var(--secondary-background-color) 42%,var(--card-background-color))}.drawer-body section h3{margin-bottom:11px}.drawer-body section>div:not(.tag-list){display:grid;grid-template-columns:135px minmax(0,1fr);gap:12px;padding:8px 0;border-bottom:1px solid color-mix(in srgb,var(--divider-color) 75%,transparent)}.drawer-body section>div:last-of-type{border-bottom:0}.drawer-body section span{font-size:11px;color:var(--secondary-text-color)}.drawer-body section strong{font-size:12px;text-align:right;overflow-wrap:anywhere}.drawer-body .tag-list{margin-top:12px}.drawer-inline-action{width:100%;margin-top:12px;padding:9px;border-radius:8px;display:flex;align-items:center;justify-content:center;gap:7px;color:#b45309;background:#fef3c7}.drawer-warning{display:flex;align-items:flex-start;gap:6px;margin-top:10px;color:var(--error-color,#c62828);font-size:11px}.drawer-warning ha-icon{--mdc-icon-size:16px;flex:0 0 auto}.drawer-actions{padding:14px 16px;border-top:1px solid var(--divider-color);display:flex;justify-content:flex-end;gap:8px;background:var(--card-background-color)}.drawer-actions .drawer-icon-action{width:42px;padding:0;text-decoration:none}.drawer-actions .primary{flex:1}.drawer-scrim{display:none;position:fixed;z-index:24;inset:0;background:#0006}
   @media(max-width:900px){.table-scroll{max-height:calc(100vh - 390px)}.drawer-scrim.open{display:block}}
   @media(max-width:600px){.device-table{display:table}.device-table thead{display:table-header-group}.device-table tbody{display:table-row-group;padding:0}.device-table tr{display:table-row;border:0;padding:0}.device-table th,.device-table td{display:table-cell}.device-table thead{display:table-header-group}.device-table td:first-child{float:none}.table-scroll{max-height:calc(100vh - 470px)}.drawer-head{padding-top:18px}.drawer-actions .secondary:not(.drawer-icon-action){font-size:0;width:42px;padding:0}.drawer-actions .secondary ha-icon{font-size:initial}}
+  @media(max-width:600px){.battery-fields{grid-template-columns:1fr}.battery-grid{grid-template-columns:1fr}.battery-card-details>div{grid-template-columns:105px minmax(0,1fr)}.battery-card-actions{align-items:flex-start;flex-direction:column}.battery-card-actions button{width:100%}}
 `;
 
 customElements.define("network-inventory-panel", NetworkInventoryPanel);

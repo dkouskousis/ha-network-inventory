@@ -114,6 +114,9 @@ class InventoryStore:
             device.setdefault("connected_device", "")
             device.setdefault("switch_port", "")
             device.setdefault("tags", [])
+            device.setdefault("battery_entity_id", "")
+            device.setdefault("battery_last_replaced_at", "")
+            device.setdefault("battery_history", [])
         if migrated:
             await self._store.async_save(self.data)
 
@@ -207,6 +210,7 @@ class InventoryStore:
                     "updated_at": now,
                 }
             )
+            self._append_initial_battery_history(device)
             self.data["devices"].append(device)
             self._remember_brand(device["brand"])
             self._remember_tags(device["tags"])
@@ -225,6 +229,14 @@ class InventoryStore:
             )
             updated = self._clean_device({**device, **payload})
             previous = deepcopy(device)
+            if (
+                updated["battery_last_replaced_at"]
+                and updated["battery_last_replaced_at"]
+                != previous.get("battery_last_replaced_at", "")
+            ):
+                updated["battery_history"].append(
+                    self._battery_history_entry(updated["battery_last_replaced_at"])
+                )
             protected = {
                 "id": device["id"],
                 "device_code": (
@@ -244,6 +256,25 @@ class InventoryStore:
             changes = self._device_changes(previous, device)
             if changes:
                 self._record_log("update", device=device, changes=changes)
+            await self._store.async_save(self.data)
+            return deepcopy(device)
+
+    async def async_record_battery_replacement(
+        self, internal_id: str, replaced_at: str, note: str = ""
+    ) -> dict[str, Any]:
+        """Record a battery replacement in the device's permanent history."""
+        async with self._lock:
+            device = self._find(internal_id)
+            replacement = self._battery_history_entry(replaced_at, note)
+            device.setdefault("battery_history", []).append(replacement)
+            device["battery_last_replaced_at"] = replacement["replaced_at"]
+            device["updated_at"] = _now()
+            self._record_log(
+                "battery_replaced",
+                device=device,
+                details=f"Battery replaced on {replacement['replaced_at']}",
+                source="battery",
+            )
             await self._store.async_save(self.data)
             return deepcopy(device)
 
@@ -398,6 +429,7 @@ class InventoryStore:
                         "updated_at": now,
                     }
                 )
+                self._append_initial_battery_history(device)
                 self.data["devices"].append(device)
                 self._remember_brand(device["brand"])
                 self._remember_tags(device["tags"])
@@ -588,6 +620,8 @@ class InventoryStore:
             "parent_device_name",
             "ha_config_entry_id",
             "ha_config_subentry_id",
+            "battery_entity_id",
+            "battery_last_replaced_at",
             "integration",
             "unifi_id",
             "unifi_kind",
@@ -640,7 +674,54 @@ class InventoryStore:
             },
             key=str.casefold,
         )
+        cleaned["battery_history"] = self._clean_battery_history(
+            payload.get("battery_history", [])
+        )
+        if cleaned["battery_last_replaced_at"]:
+            self._validate_battery_date(cleaned["battery_last_replaced_at"])
         return cleaned
+
+    def _append_initial_battery_history(self, device: dict[str, Any]) -> None:
+        replaced_at = device.get("battery_last_replaced_at", "")
+        if replaced_at and not device.get("battery_history"):
+            device["battery_history"] = [self._battery_history_entry(replaced_at)]
+
+    def _battery_history_entry(self, replaced_at: str, note: str = "") -> dict[str, str]:
+        self._validate_battery_date(replaced_at)
+        return {
+            "id": uuid4().hex,
+            "replaced_at": replaced_at,
+            "recorded_at": _now(),
+            "note": str(note).strip()[:500],
+        }
+
+    def _clean_battery_history(self, history: Any) -> list[dict[str, str]]:
+        if not isinstance(history, list):
+            raise InventoryError("Battery history must be a list")
+        cleaned: list[dict[str, str]] = []
+        for item in history[-100:]:
+            if not isinstance(item, dict):
+                continue
+            replaced_at = str(item.get("replaced_at", "")).strip()
+            if not replaced_at:
+                continue
+            self._validate_battery_date(replaced_at)
+            cleaned.append(
+                {
+                    "id": str(item.get("id") or uuid4().hex),
+                    "replaced_at": replaced_at,
+                    "recorded_at": str(item.get("recorded_at") or _now()),
+                    "note": str(item.get("note", "")).strip()[:500],
+                }
+            )
+        return cleaned
+
+    @staticmethod
+    def _validate_battery_date(value: str) -> None:
+        try:
+            datetime.strptime(value, "%Y-%m-%d")
+        except ValueError as err:
+            raise InventoryError("Battery replacement date must use YYYY-MM-DD") from err
 
     def _backup_data(self) -> dict[str, Any]:
         return deepcopy({key: value for key, value in self.data.items() if key != "backups"})

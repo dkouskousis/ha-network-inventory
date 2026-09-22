@@ -272,6 +272,38 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(device["parent_ha_device_id"], "parent-1")
         self.assertEqual(device["mac"], "")
 
+    async def test_battery_entity_and_replacement_history(self):
+        device = await self.manager.async_add(
+            device_payload(
+                "Door sensor",
+                "zigbee",
+                battery_entity_id="sensor.door_battery",
+                battery_last_replaced_at="2026-01-10",
+            )
+        )
+        self.assertEqual(device["battery_entity_id"], "sensor.door_battery")
+        self.assertEqual(len(device["battery_history"]), 1)
+
+        updated = await self.manager.async_update(
+            device["id"], {"battery_last_replaced_at": "2026-05-20"}
+        )
+        self.assertEqual(len(updated["battery_history"]), 2)
+        self.assertEqual(updated["battery_history"][-1]["replaced_at"], "2026-05-20")
+
+        replaced = await self.manager.async_record_battery_replacement(
+            device["id"], "2026-09-22", "CR2032"
+        )
+        self.assertEqual(replaced["battery_last_replaced_at"], "2026-09-22")
+        self.assertEqual(replaced["battery_history"][-1]["note"], "CR2032")
+        self.assertEqual(self.manager.data["logs"][-1]["action"], "battery_replaced")
+
+    async def test_invalid_battery_replacement_date_is_rejected(self):
+        device = await self.manager.async_add(device_payload("Remote", "zigbee"))
+        with self.assertRaisesRegex(storage.InventoryError, "YYYY-MM-DD"):
+            await self.manager.async_record_battery_replacement(
+                device["id"], "22/09/2026"
+            )
+
     def test_common_entity_name(self):
         self.assertEqual(
             storage.common_entity_name(
@@ -294,6 +326,8 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("registry.devices.values()", source)
         self.assertIn("device_registry.child_devices", source)
         self.assertIn("device.config_entry_id", source)
+        self.assertIn("def _battery_entities", source)
+        self.assertIn("websocket_battery_replaced", source)
 
 
 if __name__ == "__main__":

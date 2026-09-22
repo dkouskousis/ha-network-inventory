@@ -28,6 +28,7 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - UniFi-style device table with sorting, persistent resizable/reorderable columns, pinning, visibility controls, and density modes
 - Saved table views plus bookmarkable URL filters for repeatable workflows
 - Home Assistant Device Registry support for main and child devices using the current config entry API
+- Battery entity assignment with live percentage, low-battery overview, replacement dates, and permanent replacement history
 - Right-side device details panel with edit, print, UniFi, and delete actions
 - Search and protocol filters
 - Detailed filters for protocol, type, brand, area, and status
@@ -77,7 +78,8 @@ The importer recognises these spreadsheet columns:
 ```text
 Device Code, MAC / IEEE Address, Device IP, Device Type, Brand,
 Area, Device Name, Device ID, Entity Name, Comments, Protocol,
-Network, VLAN, SSID, AP / Switch, Switch Port, Tags
+Network, VLAN, SSID, AP / Switch, Switch Port, Tags,
+Battery Entity, Last Battery Change
 ```
 
 `Device Name`, `Device Type`, `Brand`, `Area`, `MAC / IEEE Address`, and `Protocol` are required. `Device IP` is also required for Wi-Fi and Ethernet devices. `Device Code` can be omitted to assign the next available permanent ID automatically. The importer also accepts `Wi-Fi`, `ZigBee`, `Bluetooth`, `Thread`, `Z-Wave`, `Ethernet`, `Matter`, and `Other` protocol values.

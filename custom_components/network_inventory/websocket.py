@@ -25,6 +25,7 @@ def async_register_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_list)
     websocket_api.async_register_command(hass, websocket_add)
     websocket_api.async_register_command(hass, websocket_update)
+    websocket_api.async_register_command(hass, websocket_battery_replaced)
     websocket_api.async_register_command(hass, websocket_bulk_update)
     websocket_api.async_register_command(hass, websocket_delete)
     websocket_api.async_register_command(hass, websocket_import)
@@ -105,6 +106,23 @@ async def websocket_list(
     data["unifi_items"] = unifi_items
     data["unifi_matches"] = unifi_matches
     data["ha_devices"] = _home_assistant_devices(hass, data["devices"])
+    data["battery_entities"] = _battery_entities(hass)
+    battery_by_device = {
+        item["device_id"]: item["entity_id"]
+        for item in data["battery_entities"]
+        if item["device_id"]
+    }
+    for device in data["ha_devices"]:
+        device["battery_entity_id"] = battery_by_device.get(
+            device["ha_device_id"], ""
+        )
+    for device in data["devices"]:
+        entity_id = device.get("battery_entity_id", "")
+        state = hass.states.get(entity_id) if entity_id else None
+        device["battery_level"] = _battery_level(state)
+        device["battery_available"] = bool(
+            state is not None and state.state not in {"unknown", "unavailable"}
+        )
     data["areas"] = sorted(
         (area.name for area in ar.async_get(hass).async_list_areas()),
         key=str.casefold,
@@ -160,6 +178,32 @@ async def websocket_update(
         device = await _manager(hass).async_update(msg["device_id"], msg["device"])
     except InventoryError as err:
         connection.send_error(msg["id"], "invalid_device", str(err))
+        return
+    connection.send_result(msg["id"], device)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/battery_replaced",
+        vol.Required("device_id"): str,
+        vol.Required("replaced_at"): str,
+        vol.Optional("note", default=""): str,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_battery_replaced(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Record a battery replacement for one inventory device."""
+    try:
+        device = await _manager(hass).async_record_battery_replacement(
+            msg["device_id"], msg["replaced_at"], msg["note"]
+        )
+    except InventoryError as err:
+        connection.send_error(msg["id"], "invalid_battery_replacement", str(err))
         return
     connection.send_result(msg["id"], device)
 
@@ -503,6 +547,42 @@ async def websocket_settings(
         connection.send_error(msg["id"], "invalid_settings", str(err))
         return
     connection.send_result(msg["id"], result)
+
+
+@callback
+def _battery_entities(hass: HomeAssistant) -> list[dict[str, Any]]:
+    """Return Home Assistant sensors that expose a battery percentage."""
+    entity_registry = er.async_get(hass)
+    result: list[dict[str, Any]] = []
+    for state in hass.states.async_all("sensor"):
+        device_class = str(state.attributes.get("device_class", ""))
+        unit = str(state.attributes.get("unit_of_measurement", ""))
+        friendly_name = str(state.attributes.get("friendly_name", state.entity_id))
+        searchable = f"{state.entity_id} {friendly_name}".casefold()
+        if device_class != "battery" and not (unit == "%" and "battery" in searchable):
+            continue
+        registry_entry = entity_registry.async_get(state.entity_id)
+        result.append(
+            {
+                "entity_id": state.entity_id,
+                "name": friendly_name,
+                "level": _battery_level(state),
+                "available": state.state not in {"unknown", "unavailable"},
+                "device_id": registry_entry.device_id if registry_entry else "",
+            }
+        )
+    return sorted(result, key=lambda item: (item["name"].casefold(), item["entity_id"]))
+
+
+def _battery_level(state: Any) -> float | int | None:
+    """Return a clamped battery percentage from a Home Assistant state."""
+    if state is None or state.state in {"unknown", "unavailable"}:
+        return None
+    try:
+        level = max(0.0, min(100.0, float(state.state)))
+    except (TypeError, ValueError):
+        return None
+    return int(level) if level.is_integer() else round(level, 1)
 
 
 @callback
