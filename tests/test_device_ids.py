@@ -403,6 +403,19 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("label_registry as lr", source)
         self.assertIn("async_sync_labels_from_home_assistant", source)
         self.assertIn("async_update_device(entry.id, labels=label_ids)", source)
+        frontend_source = (
+            Path(__file__).parents[1]
+            / "custom_components"
+            / "network_inventory"
+            / "frontend"
+            / "network-inventory-panel.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("availableUpdate()", frontend_source)
+        self.assertIn('href="/config/updates"', frontend_source)
+        self.assertIn(
+            'this.nav("devices", "mdi:devices", "devices", this.data.devices.length)',
+            frontend_source,
+        )
 
 
 if __name__ == "__main__":

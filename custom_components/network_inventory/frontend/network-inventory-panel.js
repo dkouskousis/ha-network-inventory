@@ -55,7 +55,8 @@ const TEXT = {
     relatedBattery: "Same device", general: "General", generalSettings: "Regional formatting",
     generalSettingsHelp: "Choose how dates and times are displayed throughout Network Inventory.",
     timeFormat: "Time format", dateFormat: "Date format", twentyFourHour: "24-hour", twelveHour: "12-hour",
-    dayFirst: "Day first", monthFirst: "Month first", formatPreview: "Preview"
+    dayFirst: "Day first", monthFirst: "Month first", formatPreview: "Preview",
+    updateAvailable: "Update available", viewUpdate: "Open Home Assistant updates"
   },
   el: {
     title: "Καταγραφή Συσκευών", overview: "Επισκόπηση", devices: "Συσκευές", newestDevices: "Νεότερες συσκευές", discover: "Discover", homeAssistant: "Home Assistant",
@@ -113,7 +114,8 @@ const TEXT = {
     relatedBattery: "Ίδια συσκευή", general: "Γενικά", generalSettings: "Μορφή ημερομηνίας και ώρας",
     generalSettingsHelp: "Επίλεξε πώς θα εμφανίζονται οι ημερομηνίες και οι ώρες σε όλο το Network Inventory.",
     timeFormat: "Μορφή ώρας", dateFormat: "Μορφή ημερομηνίας", twentyFourHour: "24ωρη", twelveHour: "12ωρη",
-    dayFirst: "Πρώτα η ημέρα", monthFirst: "Πρώτα ο μήνας", formatPreview: "Παράδειγμα"
+    dayFirst: "Πρώτα η ημέρα", monthFirst: "Πρώτα ο μήνας", formatPreview: "Παράδειγμα",
+    updateAvailable: "Νέα έκδοση", viewUpdate: "Άνοιγμα ενημερώσεων Home Assistant"
   }
 };
 
@@ -175,6 +177,7 @@ class NetworkInventoryPanel extends HTMLElement {
     this.tableDensity = tablePreferences.density;
     this.savedViews = tablePreferences.savedViews;
     this.activeSavedView = "";
+    this._updateVersion = "";
     this.sortKey = "device_code";
     this.sortDirection = "asc";
     this.discoverView = "ha";
@@ -204,7 +207,10 @@ class NetworkInventoryPanel extends HTMLElement {
       };
       this.data.battery_entities?.forEach(updateLevel);
       this.data.devices.filter(device => device.battery_entity_id).forEach(updateLevel);
-      if (batteryChanged && !this.shadowRoot.querySelector(".modal-backdrop")) this.render();
+      const updateVersion = this.availableUpdate()?.latestVersion || "";
+      const updateChanged = updateVersion !== this._updateVersion;
+      this._updateVersion = updateVersion;
+      if ((batteryChanged || updateChanged) && !this.shadowRoot.querySelector(".modal-backdrop")) this.render();
     }
     if (this.isConnected && !this._started) this.load();
   }
@@ -224,6 +230,24 @@ class NetworkInventoryPanel extends HTMLElement {
   };
 
   t(key) { return TEXT[this.lang || "en"][key] || TEXT.en[key] || key; }
+
+  availableUpdate() {
+    const states = Object.values(this._hass?.states || {});
+    const state = states.find(item => {
+      if (!item.entity_id.startsWith("update.")) return false;
+      const releaseUrl = String(item.attributes.release_url || "").toLowerCase();
+      const friendlyName = String(item.attributes.friendly_name || "").toLowerCase();
+      return releaseUrl.includes("github.com/dkouskousis/ha-network-inventory")
+        || item.entity_id === "update.network_inventory_update"
+        || friendlyName === "network inventory update";
+    });
+    if (!state || state.state !== "on") return null;
+    return {
+      installedVersion: state.attributes.installed_version || this.data?.version || "",
+      latestVersion: state.attributes.latest_version || "",
+      entityId: state.entity_id
+    };
+  }
 
   loadFiltersFromUrl() {
     const params = new URLSearchParams(window.location.search);
@@ -332,6 +356,7 @@ class NetworkInventoryPanel extends HTMLElement {
   }
 
   render() {
+    const availableUpdate = this.availableUpdate();
     const content = this.view === "overview" ? this.renderOverview()
       : this.view === "devices" ? this.renderDevices()
       : this.view === "batteries" ? this.renderBatteries()
@@ -343,12 +368,12 @@ class NetworkInventoryPanel extends HTMLElement {
       <style>${BASE_CSS}</style>
       <div class="app">
         <header>
-          <div><div class="title-row"><h1>${this.t("title")}</h1><span class="version">v${esc(this.data.version)}</span></div><p>${this.data.devices.length} ${this.t("devices").toLowerCase()}</p></div>
+          <div><div class="title-row"><h1>${this.t("title")}</h1><span class="version">v${esc(this.data.version)}</span>${availableUpdate ? `<a class="update-available" href="/config/updates" title="${this.t("viewUpdate")}"><ha-icon icon="mdi:update"></ha-icon>${this.t("updateAvailable")}${availableUpdate.latestVersion ? ` · v${esc(availableUpdate.latestVersion)}` : ""}</a>` : ""}</div><p>${this.data.devices.length} ${this.t("devices").toLowerCase()}</p></div>
           <button class="primary" data-action="add"><ha-icon icon="mdi:plus"></ha-icon>${this.t("addDevice")}</button>
         </header>
         <nav>
           ${this.nav("overview", "mdi:view-dashboard-outline", "overview")}
-          ${this.nav("devices", "mdi:devices", "devices")}
+          ${this.nav("devices", "mdi:devices", "devices", this.data.devices.length)}
           ${this.nav("batteries", "mdi:battery-medium", "batteryPowered", this.batteryDevices().length)}
           ${this.nav("discover", "mdi:radar", "discover", this.data.ha_devices.length + (this.data.unifi_items?.filter(item => !item.inventory_id).length || 0))}
           ${this.nav("integrations", "mdi:connection", "integrations")}
@@ -362,7 +387,7 @@ class NetworkInventoryPanel extends HTMLElement {
   }
 
   nav(view, icon, label, count = null) {
-    return `<button class="nav ${this.view === view ? "active" : ""}" data-view="${view}"><ha-icon icon="${icon}"></ha-icon><span>${this.t(label)}</span>${count ? `<b>${count}</b>` : ""}</button>`;
+    return `<button class="nav ${this.view === view ? "active" : ""}" data-view="${view}"><ha-icon icon="${icon}"></ha-icon><span>${this.t(label)}</span>${count !== null ? `<b>${count}</b>` : ""}</button>`;
   }
 
   subnav(group, value, label, icon, count = null) {
@@ -1485,7 +1510,7 @@ const BASE_CSS = `
   .integration-gap{margin-top:14px}.niimbot-logo{background:#f3e8ff!important;color:#7e22ce!important}.niimbot-form{max-width:none;flex-wrap:wrap}.niimbot-form label:first-child{min-width:230px}.niimbot-form label:not(:first-child){max-width:145px}
   :host{display:block;min-height:100%;background:var(--primary-background-color);color:var(--primary-text-color);font-family:var(--paper-font-body1_-_font-family,system-ui,sans-serif)}
   *{box-sizing:border-box}button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer}.app{max-width:none;margin:auto;padding:24px 28px 60px}header{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}h1{font-size:28px;margin:0 0 3px;letter-spacing:-.4px}h2{font-size:18px;margin:0 0 18px}h3{font-size:15px;margin:0 0 5px}p{margin:0}header p,.section-head p,.muted{color:var(--secondary-text-color);font-size:13px}
-  .title-row{display:flex;align-items:center;gap:9px}.version{font-size:11px;font-weight:700;color:var(--secondary-text-color);border:1px solid var(--divider-color);border-radius:20px;padding:3px 7px}
+  .title-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.version{font-size:11px;font-weight:700;color:var(--secondary-text-color);border:1px solid var(--divider-color);border-radius:20px;padding:3px 7px}.update-available{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:20px;background:#fff3cd;color:#8a5a00;font-size:11px;font-weight:750;text-decoration:none}.update-available:hover{background:#ffe9a6}.update-available ha-icon{--mdc-icon-size:15px}
   button{border:0;background:none}.primary,.secondary{height:42px;border-radius:10px;padding:0 15px;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:650;white-space:nowrap}.primary{background:var(--primary-color);color:#fff}.secondary{border:1px solid var(--divider-color);background:var(--card-background-color)}.compact{height:36px;padding:0 12px;font-size:13px}button:disabled{opacity:.55;cursor:wait}
   nav{display:flex;gap:5px;border-bottom:1px solid var(--divider-color);margin-bottom:24px;overflow:auto}.nav{padding:12px 15px;display:flex;align-items:center;gap:8px;color:var(--secondary-text-color);border-bottom:2px solid transparent;white-space:nowrap}.nav.active{color:var(--primary-color);border-color:var(--primary-color);font-weight:650}.nav b{font-size:11px;background:var(--primary-color);color:#fff;border-radius:20px;padding:2px 6px}.subnav-bar{display:flex;gap:7px;margin-bottom:18px;padding:5px;background:var(--secondary-background-color);border-radius:12px;width:max-content;max-width:100%;overflow:auto}.subnav{height:38px;padding:0 13px;border-radius:8px;display:flex;align-items:center;gap:7px;white-space:nowrap;color:var(--secondary-text-color)}.subnav.active{background:var(--card-background-color);color:var(--primary-color);font-weight:650;box-shadow:0 1px 4px #0002}.subnav b{font-size:10px;background:var(--divider-color);border-radius:12px;padding:2px 6px}.subnav ha-icon{--mdc-icon-size:18px}
   .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}.stat,.card,.table-card,.import-card{background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:14px}.stat{padding:18px;display:flex;align-items:center;gap:14px}.stat-icon{width:44px;height:44px;border-radius:12px;display:grid;place-items:center}.stat-icon.blue{background:#dbeafe;color:#2563eb}.stat-icon.green{background:#d1fae5;color:#059669}.stat-icon.orange{background:#ffedd5;color:#ea580c}.stat-icon.purple{background:#ede9fe;color:#7c3aed}.stat span{display:block;font-size:12px;color:var(--secondary-text-color);margin-bottom:3px}.stat strong{font-size:24px}.grid-two{display:grid;grid-template-columns:1fr 1.3fr;gap:16px}.card{padding:20px}.protocol-list>div{display:grid;grid-template-columns:10px 90px 1fr 28px;align-items:center;gap:9px;margin:14px 0;font-size:13px}.dot{width:9px;height:9px;border-radius:50%}.bar{height:7px;background:var(--divider-color);border-radius:10px;overflow:hidden}.bar i{display:block;height:100%;border-radius:10px}.protocol-chart-wrap{display:grid;place-items:center;border-top:1px solid var(--divider-color);margin-top:18px;padding-top:20px}.protocol-chart{width:160px;height:160px;border-radius:50%;display:grid;place-items:center;position:relative}.protocol-chart:after{content:"";position:absolute;width:92px;height:92px;border-radius:50%;background:var(--card-background-color)}.protocol-chart span{z-index:1;text-align:center}.protocol-chart strong{display:block;font-size:25px}.protocol-chart small{display:block;color:var(--secondary-text-color);font-size:11px;margin-top:2px}.mini-list button{width:100%;display:grid;grid-template-columns:58px 1fr 24px;align-items:center;text-align:left;padding:10px 5px;border-bottom:1px solid var(--divider-color)}.mini-list button:last-child{border:0}.mini-list small,td small{display:block;color:var(--secondary-text-color);margin-top:3px}.code{font-family:ui-monospace,monospace;font-weight:750;color:var(--primary-color)}
