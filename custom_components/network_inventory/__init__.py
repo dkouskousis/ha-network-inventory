@@ -13,6 +13,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import label_registry as lr
 
 from .const import DOMAIN, NAME, PANEL_URL, VERSION
+from .http import async_register_views
 from .storage import InventoryStore
 from .unifi import UniFiCloudManager
 from .websocket import async_register_commands, async_sync_labels_from_home_assistant
@@ -37,6 +38,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not domain_data.get("commands_registered"):
         async_register_commands(hass)
         domain_data["commands_registered"] = True
+    if not domain_data.get("views_registered"):
+        async_register_views(hass)
+        domain_data["views_registered"] = True
     if not domain_data.get("label_sync_unsubs"):
         async def _registry_updated(event) -> None:
             if not manager.data.get("ha_labels_migrated"):

@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 from datetime import UTC, datetime
+from pathlib import Path
+import shutil
 from typing import Any
 from uuid import uuid4
 
@@ -12,6 +14,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .const import (
+    CUSTOM_FIELD_TYPES,
+    ATTACHMENTS_DIR,
     DEFAULT_DEVICE_TYPES,
     DEFAULT_GENERAL_SETTINGS,
     DEFAULT_PROTOCOLS,
@@ -63,6 +67,9 @@ class InventoryStore:
         )
         self._lock = asyncio.Lock()
         self.data: dict[str, Any] = {}
+        self.attachments_dir = (
+            Path(hass.config.path(ATTACHMENTS_DIR)) if hass is not None else None
+        )
 
     async def async_load(self) -> None:
         """Load data and add defaults for new installations."""
@@ -91,6 +98,12 @@ class InventoryStore:
             self.data.pop("tags", None)
         self.data.setdefault("logs", [])
         self.data.setdefault("backups", [])
+        if "custom_fields" not in self.data:
+            self.data["custom_fields"] = []
+            migrated = True
+        self.data["custom_fields"] = self._clean_custom_fields(
+            self.data["custom_fields"]
+        )
         self.data.setdefault("ha_labels_migrated", False)
         previous_general = deepcopy(self.data.get("general"))
         self.data.setdefault("general", deepcopy(DEFAULT_GENERAL_SETTINGS))
@@ -148,6 +161,36 @@ class InventoryStore:
             device.setdefault("battery_last_replaced_at", "")
             device.setdefault("battery_history", [])
             device.setdefault("primary_entity_id", "")
+            for key, default in (
+                ("admin_url", ""),
+                ("links", []),
+                ("custom_values", {}),
+                ("attachments", []),
+            ):
+                if key not in device:
+                    device[key] = deepcopy(default)
+                    migrated = True
+            cleaned_admin_url = str(device.get("admin_url", "")).strip()[:1000]
+            if cleaned_admin_url:
+                self._validate_http_url(cleaned_admin_url, "Admin URL")
+            cleaned_links = self._clean_links(device.get("links", []))
+            cleaned_values = self._clean_custom_values(
+                device.get("custom_values", {})
+            )
+            cleaned_attachments = self._clean_attachments(
+                device.get("attachments", [])
+            )
+            if (
+                device["admin_url"] != cleaned_admin_url
+                or device["links"] != cleaned_links
+                or device["custom_values"] != cleaned_values
+                or device["attachments"] != cleaned_attachments
+            ):
+                migrated = True
+            device["admin_url"] = cleaned_admin_url
+            device["links"] = cleaned_links
+            device["custom_values"] = cleaned_values
+            device["attachments"] = cleaned_attachments
         if migrated:
             await self._store.async_save(self.data)
 
@@ -276,6 +319,8 @@ class InventoryStore:
         """Create a device and assign its permanent device code."""
         async with self._lock:
             device = self._clean_device(payload)
+            # Attachment metadata is managed only after the file is safely stored.
+            device["attachments"] = []
             protocol = device["protocol"]
             device_code = self._next_device_code(protocol)
             now = _now()
@@ -305,7 +350,9 @@ class InventoryStore:
             reset_device_code = (
                 "device_code" in payload and payload.get("device_code") in (None, "")
             )
-            updated = self._clean_device({**device, **payload})
+            updated = self._clean_device(
+                {**device, **payload, "attachments": device.get("attachments", [])}
+            )
             previous = deepcopy(device)
             if (
                 updated["battery_last_replaced_at"]
@@ -448,6 +495,61 @@ class InventoryStore:
             self._record_log("delete", device=device, changes=self._device_changes(device, {}))
             self.data["devices"].remove(device)
             await self._store.async_save(self.data)
+        if self.attachments_dir is not None:
+            target = self.attachments_dir / internal_id
+            await asyncio.to_thread(shutil.rmtree, target, True)
+
+    async def async_get_device(self, internal_id: str) -> dict[str, Any]:
+        """Return one stored device."""
+        async with self._lock:
+            return deepcopy(self._find(internal_id))
+
+    async def async_add_attachment(
+        self, internal_id: str, attachment: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Add attachment metadata after its file has been stored."""
+        async with self._lock:
+            device = self._find(internal_id)
+            cleaned = self._clean_attachments([attachment])
+            if not cleaned:
+                raise InventoryError("Invalid attachment")
+            device.setdefault("attachments", []).append(cleaned[0])
+            device["updated_at"] = _now()
+            self._record_log(
+                "attachment_add",
+                device=device,
+                details=f"Attachment added: {cleaned[0]['name']}",
+                source="attachment",
+            )
+            await self._store.async_save(self.data)
+            return deepcopy(cleaned[0])
+
+    async def async_remove_attachment(
+        self, internal_id: str, attachment_id: str
+    ) -> dict[str, Any]:
+        """Remove attachment metadata and return the removed item."""
+        async with self._lock:
+            device = self._find(internal_id)
+            attachment = next(
+                (
+                    item
+                    for item in device.get("attachments", [])
+                    if item.get("id") == attachment_id
+                ),
+                None,
+            )
+            if attachment is None:
+                raise InventoryError("Attachment not found")
+            device["attachments"].remove(attachment)
+            device["updated_at"] = _now()
+            self._record_log(
+                "attachment_delete",
+                device=device,
+                details=f"Attachment removed: {attachment['name']}",
+                source="attachment",
+            )
+            await self._store.async_save(self.data)
+            return deepcopy(attachment)
 
     async def async_import(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
         """Import rows, preserving valid unique codes when supplied."""
@@ -479,6 +581,7 @@ class InventoryStore:
                     skipped += 1
                     continue
                 device = self._clean_device(payload)
+                device["attachments"] = []
                 protocol = device["protocol"]
                 supplied_code = _to_int(payload.get("device_code"))
                 if supplied_code is not None:
@@ -533,6 +636,7 @@ class InventoryStore:
                 "device_types": deepcopy(self.data["device_types"]),
                 "brands": deepcopy(self.data["brands"]),
                 "labels": deepcopy(self.data["labels"]),
+                "custom_fields": deepcopy(self.data["custom_fields"]),
             }
             general = _clean_general_settings(
                 payload.get("general", self.data["general"])
@@ -600,11 +704,30 @@ class InventoryStore:
             }
             labels.update(label for device in self.data["devices"] for label in device.get("labels", []))
 
+            custom_fields = self._clean_custom_fields(
+                payload.get("custom_fields", self.data["custom_fields"])
+            )
+            custom_field_ids = {item["id"] for item in custom_fields}
+            cleaned_custom_values = {
+                device["id"]: self._clean_custom_values(
+                    {
+                        key: value
+                        for key, value in device.get("custom_values", {}).items()
+                        if key in custom_field_ids
+                    },
+                    custom_fields,
+                )
+                for device in self.data["devices"]
+            }
+
             self.data["general"] = general
             self.data["protocols"] = cleaned
             self.data["device_types"] = device_types
             self.data["brands"] = sorted(brands, key=str.casefold)
             self.data["labels"] = sorted(labels, key=str.casefold)
+            self.data["custom_fields"] = custom_fields
+            for device in self.data["devices"]:
+                device["custom_values"] = cleaned_custom_values[device["id"]]
             for key, config in cleaned.items():
                 self.data["counters"].setdefault(key, config["start"] - 1)
             current = {key: deepcopy(self.data[key]) for key in previous}
@@ -715,6 +838,7 @@ class InventoryStore:
             "ssid",
             "connected_device",
             "switch_port",
+            "admin_url",
         )
         cleaned = {
             key: str(payload.get(key, "") or "").strip()[:1000] for key in allowed
@@ -761,6 +885,15 @@ class InventoryStore:
         cleaned["battery_history"] = self._clean_battery_history(
             payload.get("battery_history", [])
         )
+        cleaned["links"] = self._clean_links(payload.get("links", []))
+        cleaned["custom_values"] = self._clean_custom_values(
+            payload.get("custom_values", {})
+        )
+        cleaned["attachments"] = self._clean_attachments(
+            payload.get("attachments", [])
+        )
+        if cleaned["admin_url"]:
+            self._validate_http_url(cleaned["admin_url"], "Admin URL")
         if cleaned["battery_last_replaced_at"]:
             self._validate_battery_date(cleaned["battery_last_replaced_at"])
         if cleaned["primary_entity_id"]:
@@ -768,6 +901,135 @@ class InventoryStore:
             if not separator or not domain or not object_id:
                 raise InventoryError("HA Primary entity must be a complete entity ID")
         return cleaned
+
+    def _clean_custom_fields(self, fields: Any) -> list[dict[str, str]]:
+        if not isinstance(fields, list):
+            raise InventoryError("Custom fields must be a list")
+        cleaned: list[dict[str, str]] = []
+        seen_ids: set[str] = set()
+        seen_labels: set[str] = set()
+        for item in fields[:50]:
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get("label", "")).strip()[:80]
+            field_type = str(item.get("type", "text")).strip().lower()
+            field_id = str(item.get("id") or uuid4().hex).strip()[:64]
+            if not label:
+                raise InventoryError("Every custom field needs a name")
+            if field_type not in CUSTOM_FIELD_TYPES:
+                raise InventoryError(f"Unsupported custom field type: {field_type}")
+            if field_id in seen_ids or label.casefold() in seen_labels:
+                raise InventoryError("Custom field names must be unique")
+            seen_ids.add(field_id)
+            seen_labels.add(label.casefold())
+            cleaned.append({"id": field_id, "label": label, "type": field_type})
+        return cleaned
+
+    def _clean_custom_values(
+        self,
+        values: Any,
+        definitions: list[dict[str, str]] | None = None,
+    ) -> dict[str, Any]:
+        if not isinstance(values, dict):
+            raise InventoryError("Custom field values must be an object")
+        fields = {
+            item["id"]: item
+            for item in (
+                definitions
+                if definitions is not None
+                else self.data.get("custom_fields", [])
+            )
+        }
+        cleaned: dict[str, Any] = {}
+        for field_id, value in values.items():
+            definition = fields.get(str(field_id))
+            if definition is None:
+                continue
+            field_type = definition["type"]
+            if field_type == "boolean":
+                cleaned[field_id] = value is True or str(value).lower() in {"1", "true", "on", "yes"}
+                continue
+            text = str(value or "").strip()[:2000]
+            if not text:
+                continue
+            if field_type == "number":
+                try:
+                    float(text)
+                except ValueError as err:
+                    raise InventoryError(f"{definition['label']} must be a number") from err
+            elif field_type == "date":
+                try:
+                    datetime.strptime(text, "%Y-%m-%d")
+                except ValueError as err:
+                    raise InventoryError(f"{definition['label']} must use YYYY-MM-DD") from err
+            elif field_type == "url":
+                self._validate_http_url(text, definition["label"])
+            cleaned[field_id] = text
+        return cleaned
+
+    def _clean_links(self, links: Any) -> list[dict[str, str]]:
+        if not isinstance(links, list):
+            raise InventoryError("Links must be a list")
+        cleaned: list[dict[str, str]] = []
+        for item in links[:25]:
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get("label", "")).strip()[:100]
+            url = str(item.get("url", "")).strip()[:2000]
+            if not label and not url:
+                continue
+            if not label or not url:
+                raise InventoryError("Every link needs a name and URL")
+            self._validate_http_url(url, label)
+            cleaned.append({"id": str(item.get("id") or uuid4().hex), "label": label, "url": url})
+        return cleaned
+
+    @staticmethod
+    def _clean_attachments(attachments: Any) -> list[dict[str, Any]]:
+        if not isinstance(attachments, list):
+            raise InventoryError("Attachments must be a list")
+        if len(attachments) > 100:
+            raise InventoryError("A device can have up to 100 attachments")
+        cleaned: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        seen_names: set[str] = set()
+        for item in attachments[:100]:
+            if not isinstance(item, dict):
+                continue
+            attachment_id = str(item.get("id", "")).strip()
+            name = str(item.get("name", "")).strip()[:255]
+            stored_name = str(item.get("stored_name", "")).strip()[:100]
+            if not attachment_id or not name or not stored_name:
+                continue
+            if stored_name in {".", ".."} or Path(stored_name).name != stored_name:
+                raise InventoryError("Invalid attachment filename")
+            if attachment_id in seen_ids or stored_name in seen_names:
+                raise InventoryError("Duplicate attachment metadata")
+            try:
+                size = max(0, int(item.get("size", 0)))
+            except (TypeError, ValueError) as err:
+                raise InventoryError("Invalid attachment size") from err
+            seen_ids.add(attachment_id)
+            seen_names.add(stored_name)
+            cleaned.append(
+                {
+                    "id": attachment_id,
+                    "name": name,
+                    "stored_name": stored_name,
+                    "content_type": str(item.get("content_type", "application/octet-stream"))[:150],
+                    "size": size,
+                    "created_at": str(item.get("created_at") or _now()),
+                }
+            )
+        return cleaned
+
+    @staticmethod
+    def _validate_http_url(value: str, label: str) -> None:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise InventoryError(f"{label} must be a valid http or https URL")
 
     def _append_initial_battery_history(self, device: dict[str, Any]) -> None:
         replaced_at = device.get("battery_last_replaced_at", "")
@@ -839,6 +1101,10 @@ class InventoryStore:
         else:
             candidate.pop("tags", None)
         candidate.setdefault("logs", [])
+        candidate.setdefault("custom_fields", [])
+        candidate["custom_fields"] = self._clean_custom_fields(
+            candidate["custom_fields"]
+        )
         candidate.setdefault("counters", {})
         candidate.setdefault("ha_labels_migrated", False)
         candidate.setdefault("general", deepcopy(DEFAULT_GENERAL_SETTINGS))
@@ -866,9 +1132,16 @@ class InventoryStore:
                 if not config["start"] <= code <= config["end"]:
                     raise InventoryError(f"Device code {code} is outside its protocol range")
                 now = _now()
+                internal_id = str(raw.get("id") or uuid4().hex)
+                if (
+                    not internal_id
+                    or len(internal_id) > 64
+                    or not all(char.isalnum() or char in {"-", "_"} for char in internal_id)
+                ):
+                    raise InventoryError("Backup contains an invalid internal device ID")
                 cleaned.update(
                     {
-                        "id": str(raw.get("id") or uuid4().hex),
+                        "id": internal_id,
                         "device_code": code,
                         "created_at": str(raw.get("created_at") or now),
                         "updated_at": str(raw.get("updated_at") or now),

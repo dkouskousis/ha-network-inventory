@@ -5,10 +5,14 @@ NAME = "Network Inventory"
 STORAGE_KEY = f"{DOMAIN}.data"
 STORAGE_VERSION = 1
 PANEL_URL = "/network_inventory_static"
-VERSION = "0.16.3"
+VERSION = "0.17.0"
 UNIFI_STORAGE_KEY = f"{DOMAIN}.unifi"
 DEVICE_TYPES_VERSION = 2
 IP_PROTOCOLS = {"wifi", "ethernet"}
+ATTACHMENTS_DIR = f".storage/{DOMAIN}/attachments"
+MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024
+MAX_BACKUP_SIZE = 100 * 1024 * 1024
+CUSTOM_FIELD_TYPES = {"text", "number", "date", "url", "boolean"}
 
 DEFAULT_GENERAL_SETTINGS = {
     "time_format": "24h",
