@@ -13,6 +13,7 @@ from homeassistant.helpers.storage import Store
 
 from .const import (
     DEFAULT_DEVICE_TYPES,
+    DEFAULT_GENERAL_SETTINGS,
     DEFAULT_PROTOCOLS,
     DEFAULT_TAGS,
     DEVICE_TYPES_VERSION,
@@ -38,6 +39,19 @@ def common_entity_name(entity_ids: list[str]) -> str:
         else:
             break
     return "_".join(common)
+
+
+def _clean_general_settings(value: Any) -> dict[str, str]:
+    """Validate regional display preferences."""
+    if not isinstance(value, dict):
+        raise InventoryError("General settings must be an object")
+    time_format = str(value.get("time_format", ""))
+    date_format = str(value.get("date_format", ""))
+    if time_format not in {"24h", "12h"}:
+        raise InventoryError("Time format must be 24h or 12h")
+    if date_format not in {"day_first", "month_first"}:
+        raise InventoryError("Date format must be day first or month first")
+    return {"time_format": time_format, "date_format": date_format}
 
 
 class InventoryStore:
@@ -73,6 +87,13 @@ class InventoryStore:
         self.data.setdefault("tags", list(DEFAULT_TAGS))
         self.data.setdefault("logs", [])
         self.data.setdefault("backups", [])
+        previous_general = deepcopy(self.data.get("general"))
+        self.data.setdefault("general", deepcopy(DEFAULT_GENERAL_SETTINGS))
+        for key, value in DEFAULT_GENERAL_SETTINGS.items():
+            self.data["general"].setdefault(key, value)
+        self.data["general"] = _clean_general_settings(self.data["general"])
+        if previous_general != self.data["general"]:
+            migrated = True
         if len(self.data["logs"]) > 500:
             self.data["logs"] = self.data["logs"][-500:]
             migrated = True
@@ -448,14 +469,18 @@ class InventoryStore:
             return {"imported": imported, "skipped": skipped, "backup_id": backup_id}
 
     async def async_save_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Save protocol ranges, device types, brands, and tags."""
+        """Save general preferences, protocol ranges, and field options."""
         async with self._lock:
             previous = {
+                "general": deepcopy(self.data["general"]),
                 "protocols": deepcopy(self.data["protocols"]),
                 "device_types": deepcopy(self.data["device_types"]),
                 "brands": deepcopy(self.data["brands"]),
                 "tags": deepcopy(self.data["tags"]),
             }
+            general = _clean_general_settings(
+                payload.get("general", self.data["general"])
+            )
             protocols = payload.get("protocols", self.data["protocols"])
             cleaned: dict[str, dict[str, Any]] = {}
             ranges: list[tuple[int, int, str]] = []
@@ -519,6 +544,7 @@ class InventoryStore:
             }
             tags.update(tag for device in self.data["devices"] for tag in device.get("tags", []))
 
+            self.data["general"] = general
             self.data["protocols"] = cleaned
             self.data["device_types"] = device_types
             self.data["brands"] = sorted(brands, key=str.casefold)
@@ -755,6 +781,8 @@ class InventoryStore:
         candidate.setdefault("tags", list(DEFAULT_TAGS))
         candidate.setdefault("logs", [])
         candidate.setdefault("counters", {})
+        candidate.setdefault("general", deepcopy(DEFAULT_GENERAL_SETTINGS))
+        candidate["general"] = _clean_general_settings(candidate["general"])
         candidate.setdefault(
             "niimbot",
             {"device_id": "", "label_width_mm": 30, "label_height_mm": 15, "margin_mm": 1.5, "top_margin_mm": 2},

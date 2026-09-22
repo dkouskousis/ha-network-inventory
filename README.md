@@ -21,6 +21,7 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - Import and export compatible CSV files
 - Portable JSON export and restore, plus automatic backups before bulk imports
 - Field-level change history in a dedicated Logs tab
+- General settings for 24/12-hour time and day-first/month-first dates
 - Network, VLAN, SSID, connected AP/switch, and switch-port fields
 - Automatic UniFi topology enrichment for devices matched by MAC address
 - Configurable custom tags with device-list chips and tag filtering

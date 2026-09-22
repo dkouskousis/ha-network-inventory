@@ -155,6 +155,25 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["top_margin_mm"], 2)
         self.assertEqual(self.manager.data["niimbot"]["device_id"], "printer-device-id")
 
+    async def test_general_date_and_time_preferences_are_stored(self):
+        self.assertEqual(
+            self.manager.data["general"],
+            {"time_format": "24h", "date_format": "day_first"},
+        )
+        result = await self.manager.async_save_settings(
+            {"general": {"time_format": "12h", "date_format": "month_first"}}
+        )
+        self.assertEqual(
+            result["general"],
+            {"time_format": "12h", "date_format": "month_first"},
+        )
+
+    async def test_invalid_general_preferences_are_rejected(self):
+        with self.assertRaisesRegex(storage.InventoryError, "Time format"):
+            await self.manager.async_save_settings(
+                {"general": {"time_format": "auto", "date_format": "day_first"}}
+            )
+
     async def test_network_fields_tags_and_change_log_are_stored(self):
         device = await self.manager.async_add(
             device_payload(
