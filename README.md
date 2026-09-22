@@ -25,7 +25,9 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - Automatic UniFi topology enrichment for devices matched by MAC address
 - Configurable custom tags with device-list chips and tag filtering
 - Bulk editing for device type, brand, network details, and tags
-- UniFi-style resizable device table with persistent column widths
+- UniFi-style device table with sorting, persistent resizable/reorderable columns, pinning, visibility controls, and density modes
+- Saved table views plus bookmarkable URL filters for repeatable workflows
+- Home Assistant Device Registry support for main and child devices using the current config entry API
 - Right-side device details panel with edit, print, UniFi, and delete actions
 - Search and protocol filters
 - Detailed filters for protocol, type, brand, area, and status

@@ -58,8 +58,8 @@ def _niimbot_printers(hass: HomeAssistant) -> list[dict[str, str]]:
             "name": device.name_by_user or device.name or device.model or "NIIMBOT",
             "model": device.model or "",
         }
-        for device in registry.devices.values()
-        if entry_ids.intersection(device.config_entries)
+        for device in registry.devices
+        if device.config_entry_id in entry_ids
     ]
     return sorted(printers, key=lambda item: item["name"].casefold())
 
@@ -518,42 +518,80 @@ def _home_assistant_devices(
     }
     result: list[dict[str, Any]] = []
 
-    for device in device_registry.devices.values():
+    registry_devices = [*device_registry.devices, *device_registry.child_devices]
+    for device in registry_devices:
         if device.id in imported_ids:
             continue
-        domains = sorted(
-            {
-                entry.domain
-                for entry_id in device.config_entries
-                if (entry := hass.config_entries.async_get_entry(entry_id)) is not None
-            }
+        config_entry = hass.config_entries.async_get_entry(device.config_entry_id)
+        domains = [config_entry.domain] if config_entry is not None else []
+        is_child = isinstance(device, dr.ChildDeviceEntry)
+        parent = (
+            device_registry.async_get(
+                device.parent_device_id,
+                include_child_devices=False,
+                include_composite_devices=False,
+            )
+            if is_child
+            else None
         )
-        connections = {kind: value for kind, value in device.connections}
+        connections = (
+            {} if is_child else {kind: value for kind, value in device.connections}
+        )
         entities = [
             entry
             for entry in entity_registry.entities.values()
             if entry.device_id == device.id
         ]
         entity_ids = sorted(entry.entity_id for entry in entities)
-        area_id = device.area_id or next(
+        area_id = device.area_id or (parent.area_id if parent else None) or next(
             (entry.area_id for entry in entities if entry.area_id), None
         )
         area = area_registry.async_get_area(area_id) if area_id else None
+        device_name = device.name_by_user or device.name
+        if not device_name:
+            device_name = (
+                parent.model
+                if is_child and parent
+                else ""
+                if is_child
+                else device.model
+            )
+        brand = (
+            parent.manufacturer
+            if is_child and parent
+            else "" if is_child else device.manufacturer
+        ) or (domains[0].replace("_", " ").title() if domains else "Home Assistant")
         result.append(
             {
                 "ha_device_id": device.id,
-                "name": device.name_by_user or device.name or device.model or "Unnamed device",
-                "brand": device.manufacturer or "",
-                "model": device.model or "",
+                "name": device_name or "Unnamed device",
+                "brand": brand,
+                "model": (
+                    parent.model
+                    if is_child and parent
+                    else ""
+                    if is_child
+                    else device.model
+                )
+                or "",
                 "area": area.name if area else "",
                 "mac": _hardware_address(connections),
-                "ip_address": _configuration_ip(device.configuration_url),
+                "ip_address": "" if is_child else _configuration_ip(device.configuration_url),
                 "device_type": _guess_device_type(entity_ids),
                 "protocol": _guess_protocol(domains),
                 "integration": ", ".join(domains),
                 "device_identifier": _first_identifier(device.identifiers),
                 "entity_name": common_entity_name(entity_ids),
                 "status": "unknown",
+                "ha_device_kind": "child" if is_child else "device",
+                "parent_ha_device_id": device.parent_device_id if is_child else "",
+                "parent_device_name": (
+                    parent.name_by_user or parent.name or parent.model or ""
+                    if parent
+                    else ""
+                ),
+                "ha_config_entry_id": device.config_entry_id,
+                "ha_config_subentry_id": device.config_subentry_id or "",
             }
         )
 

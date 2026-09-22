@@ -254,6 +254,24 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
                 device_payload("No IP", "wifi", ip_address="")
             )
 
+    async def test_child_device_does_not_require_mac_or_ip(self):
+        device = await self.manager.async_add(
+            device_payload(
+                "Child channel",
+                "wifi",
+                mac="",
+                ip_address="",
+                ha_device_kind="child",
+                parent_ha_device_id="parent-1",
+                parent_device_name="Parent hub",
+                ha_config_entry_id="entry-1",
+                ha_config_subentry_id="subentry-1",
+            )
+        )
+        self.assertEqual(device["ha_device_kind"], "child")
+        self.assertEqual(device["parent_ha_device_id"], "parent-1")
+        self.assertEqual(device["mac"], "")
+
     def test_common_entity_name(self):
         self.assertEqual(
             storage.common_entity_name(
@@ -265,6 +283,17 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
             ),
             "lamp_10",
         )
+
+    def test_device_registry_code_uses_current_iterables(self):
+        source = (
+            Path(__file__).parents[1]
+            / "custom_components"
+            / "network_inventory"
+            / "websocket.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("registry.devices.values()", source)
+        self.assertIn("device_registry.child_devices", source)
+        self.assertIn("device.config_entry_id", source)
 
 
 if __name__ == "__main__":

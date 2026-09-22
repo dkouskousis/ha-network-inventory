@@ -583,6 +583,11 @@ class InventoryStore:
             "comments",
             "status",
             "ha_device_id",
+            "ha_device_kind",
+            "parent_ha_device_id",
+            "parent_device_name",
+            "ha_config_entry_id",
+            "ha_config_subentry_id",
             "integration",
             "unifi_id",
             "unifi_kind",
@@ -608,10 +613,15 @@ class InventoryStore:
             "brand": "Brand",
             "area": "Area",
             "protocol": "Protocol",
-            "mac": "MAC / IEEE",
         }
+        if cleaned["ha_device_kind"] != "child":
+            required["mac"] = "MAC / IEEE"
         missing = [label for key, label in required.items() if not cleaned[key]]
-        if cleaned["protocol"] in IP_PROTOCOLS and not cleaned["ip_address"]:
+        if (
+            cleaned["ha_device_kind"] != "child"
+            and cleaned["protocol"] in IP_PROTOCOLS
+            and not cleaned["ip_address"]
+        ):
             missing.append("IP address")
         if missing:
             raise InventoryError("Required fields: " + ", ".join(missing))

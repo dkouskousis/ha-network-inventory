@@ -41,7 +41,10 @@ const TEXT = {
     applyField: "Change", tagOperation: "Tag operation", keepTags: "Do not change tags", addTags: "Add tags",
     removeTags: "Remove tags", replaceTags: "Replace tags", bulkUpdated: "devices updated", bulkHelp: "Only checked fields will be changed.",
     fieldOptions: "Dropdown fields", fieldOptionsHelp: "Manage the available device types, brands, and tags.", configureIntegration: "Configure integration",
-    createdAt: "Created", updatedAt: "Last updated"
+    createdAt: "Created", updatedAt: "Last updated", columns: "Columns", density: "Density", compactDensity: "Compact",
+    normalDensity: "Normal", comfortableDensity: "Comfortable", savedViews: "Saved views", saveView: "Save view",
+    deleteView: "Delete view", viewName: "View name", results: "results", pin: "Pin", show: "Show", resetColumns: "Reset columns",
+    parentDevice: "Parent device", childDevice: "Child device", mainDevice: "Main device", copied: "Copied"
   },
   el: {
     title: "Καταγραφή Συσκευών", overview: "Επισκόπηση", devices: "Συσκευές", newestDevices: "Νεότερες συσκευές", discover: "Discover", homeAssistant: "Home Assistant",
@@ -85,20 +88,44 @@ const TEXT = {
     applyField: "Αλλαγή", tagOperation: "Ενέργεια tags", keepTags: "Να μην αλλάξουν τα tags", addTags: "Προσθήκη tags",
     removeTags: "Αφαίρεση tags", replaceTags: "Αντικατάσταση tags", bulkUpdated: "συσκευές ενημερώθηκαν", bulkHelp: "Θα αλλάξουν μόνο τα επιλεγμένα πεδία.",
     fieldOptions: "Πεδία dropdown", fieldOptionsHelp: "Διαχείριση διαθέσιμων τύπων συσκευής, brands και tags.", configureIntegration: "Ρύθμιση integration",
-    createdAt: "Δημιουργήθηκε", updatedAt: "Τελευταία ενημέρωση"
+    createdAt: "Δημιουργήθηκε", updatedAt: "Τελευταία ενημέρωση", columns: "Στήλες", density: "Πυκνότητα", compactDensity: "Συμπαγής",
+    normalDensity: "Κανονική", comfortableDensity: "Άνετη", savedViews: "Αποθηκευμένες προβολές", saveView: "Αποθήκευση προβολής",
+    deleteView: "Διαγραφή προβολής", viewName: "Όνομα προβολής", results: "αποτελέσματα", pin: "Καρφίτσωμα", show: "Εμφάνιση", resetColumns: "Επαναφορά στηλών",
+    parentDevice: "Γονική συσκευή", childDevice: "Child device", mainDevice: "Κύρια συσκευή", copied: "Αντιγράφηκε"
   }
 };
 
 const COLUMN_WIDTHS_KEY = "network-inventory-column-widths";
+const TABLE_PREFERENCES_KEY = "network-inventory-table-preferences";
 const DEFAULT_COLUMN_WIDTHS = {
   device_code: 90, name: 230, status: 100, device_type: 145, brand: 145, model: 155,
   area: 135, protocol: 125, mac: 175, ip_address: 135, network: 150, vlan: 90,
   ssid: 155, connected_device: 175, switch_port: 110, tags: 185
 };
+const DEFAULT_COLUMN_ORDER = Object.keys(DEFAULT_COLUMN_WIDTHS);
+const FILTER_URL_KEYS = {
+  query: "ni_q", protocolFilter: "ni_protocol", typeFilter: "ni_type", brandFilter: "ni_brand",
+  areaFilter: "ni_area", statusFilter: "ni_status", ipFilter: "ni_ip", tagFilter: "ni_tag",
+  sortKey: "ni_sort", sortDirection: "ni_direction"
+};
 
 function loadColumnWidths() {
   const stored = JSON.parse(localStorage.getItem(COLUMN_WIDTHS_KEY) || "{}");
   return { ...DEFAULT_COLUMN_WIDTHS, ...stored };
+}
+
+function loadTablePreferences() {
+  const stored = JSON.parse(localStorage.getItem(TABLE_PREFERENCES_KEY) || "{}");
+  const order = Array.isArray(stored.columnOrder) ? stored.columnOrder.filter(key => DEFAULT_COLUMN_ORDER.includes(key)) : [];
+  const visible = Array.isArray(stored.visibleColumns) ? stored.visibleColumns.filter(key => DEFAULT_COLUMN_ORDER.includes(key)) : DEFAULT_COLUMN_ORDER;
+  const pinned = Array.isArray(stored.pinnedColumns) ? stored.pinnedColumns.filter(key => DEFAULT_COLUMN_ORDER.includes(key)) : ["device_code", "name"];
+  return {
+    columnOrder: [...order, ...DEFAULT_COLUMN_ORDER.filter(key => !order.includes(key))],
+    visibleColumns: visible.length ? visible : DEFAULT_COLUMN_ORDER,
+    pinnedColumns: pinned,
+    density: ["compact", "normal", "comfortable"].includes(stored.density) ? stored.density : "compact",
+    savedViews: Array.isArray(stored.savedViews) ? stored.savedViews : []
+  };
 }
 
 class NetworkInventoryPanel extends HTMLElement {
@@ -118,8 +145,18 @@ class NetworkInventoryPanel extends HTMLElement {
     this.selectedDevices = new Set();
     this.activeDeviceId = null;
     this.columnWidths = loadColumnWidths();
+    const tablePreferences = loadTablePreferences();
+    this.columnOrder = tablePreferences.columnOrder;
+    this.visibleColumns = new Set(tablePreferences.visibleColumns);
+    this.pinnedColumns = new Set(tablePreferences.pinnedColumns);
+    this.tableDensity = tablePreferences.density;
+    this.savedViews = tablePreferences.savedViews;
+    this.activeSavedView = "";
+    this.sortKey = "device_code";
+    this.sortDirection = "asc";
     this.discoverView = "ha";
     this.settingsView = "fields";
+    this.loadFiltersFromUrl();
     this._started = false;
   }
 
@@ -144,6 +181,93 @@ class NetworkInventoryPanel extends HTMLElement {
   };
 
   t(key) { return TEXT[this.lang || "en"][key] || TEXT.en[key] || key; }
+
+  loadFiltersFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    Object.entries(FILTER_URL_KEYS).forEach(([property, parameter]) => {
+      if (params.has(parameter)) this[property] = params.get(parameter) || "";
+    });
+    if (!DEFAULT_COLUMN_ORDER.includes(this.sortKey)) this.sortKey = "device_code";
+    if (!['asc', 'desc'].includes(this.sortDirection)) this.sortDirection = "asc";
+  }
+
+  syncFiltersToUrl() {
+    const url = new URL(window.location.href);
+    Object.entries(FILTER_URL_KEYS).forEach(([property, parameter]) => {
+      const value = this[property];
+      const isDefaultSort = (property === "sortKey" && value === "device_code") || (property === "sortDirection" && value === "asc");
+      if (value && !isDefaultSort) url.searchParams.set(parameter, value); else url.searchParams.delete(parameter);
+    });
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
+  saveTablePreferences() {
+    localStorage.setItem(TABLE_PREFERENCES_KEY, JSON.stringify({
+      columnOrder: this.columnOrder,
+      visibleColumns: [...this.visibleColumns],
+      pinnedColumns: [...this.pinnedColumns],
+      density: this.tableDensity,
+      savedViews: this.savedViews
+    }));
+  }
+
+  currentViewState() {
+    return {
+      filters: Object.fromEntries(Object.keys(FILTER_URL_KEYS).filter(key => !["sortKey", "sortDirection"].includes(key)).map(key => [key, this[key]])),
+      sortKey: this.sortKey,
+      sortDirection: this.sortDirection,
+      columnOrder: [...this.columnOrder],
+      visibleColumns: [...this.visibleColumns],
+      pinnedColumns: [...this.pinnedColumns],
+      density: this.tableDensity
+    };
+  }
+
+  applySavedView(id) {
+    this.activeSavedView = id;
+    const view = this.savedViews.find(item => item.id === id);
+    if (!view) return this.render();
+    Object.assign(this, view.state.filters || {});
+    this.sortKey = DEFAULT_COLUMN_ORDER.includes(view.state.sortKey) ? view.state.sortKey : "device_code";
+    this.sortDirection = view.state.sortDirection === "desc" ? "desc" : "asc";
+    this.columnOrder = [...(view.state.columnOrder || DEFAULT_COLUMN_ORDER)].filter(key => DEFAULT_COLUMN_ORDER.includes(key));
+    this.columnOrder.push(...DEFAULT_COLUMN_ORDER.filter(key => !this.columnOrder.includes(key)));
+    this.visibleColumns = new Set((view.state.visibleColumns || DEFAULT_COLUMN_ORDER).filter(key => DEFAULT_COLUMN_ORDER.includes(key)));
+    this.pinnedColumns = new Set((view.state.pinnedColumns || []).filter(key => DEFAULT_COLUMN_ORDER.includes(key)));
+    this.tableDensity = ["compact", "normal", "comfortable"].includes(view.state.density) ? view.state.density : "compact";
+    this.syncFiltersToUrl();
+    this.saveTablePreferences();
+    this.render();
+  }
+
+  saveCurrentView() {
+    const active = this.savedViews.find(item => item.id === this.activeSavedView);
+    const name = prompt(this.t("viewName"), active?.name || "")?.trim();
+    if (!name) return;
+    const view = { id: active?.id || `view-${Date.now().toString(36)}`, name, state: this.currentViewState() };
+    if (active) Object.assign(active, view); else this.savedViews.push(view);
+    this.activeSavedView = view.id;
+    this.saveTablePreferences();
+    this.render();
+  }
+
+  deleteCurrentView() {
+    if (!this.activeSavedView) return;
+    this.savedViews = this.savedViews.filter(item => item.id !== this.activeSavedView);
+    this.activeSavedView = "";
+    this.saveTablePreferences();
+    this.render();
+  }
+
+  resetColumns() {
+    this.columnOrder = [...DEFAULT_COLUMN_ORDER];
+    this.visibleColumns = new Set(DEFAULT_COLUMN_ORDER);
+    this.pinnedColumns = new Set(["device_code", "name"]);
+    this.tableDensity = "compact";
+    this.activeSavedView = "";
+    this.saveTablePreferences();
+    this.render();
+  }
 
   async load() {
     this._started = true;
@@ -254,9 +378,18 @@ class NetworkInventoryPanel extends HTMLElement {
     const activeDevice = this.data.devices.find(device => device.id === this.activeDeviceId);
     const columns = this.deviceColumns();
     const tableWidth = 44 + columns.reduce((total, column) => total + this.columnWidths[column.key], 0);
+    const savedViewOptions = this.savedViews.map(view => `<option value="${esc(view.id)}" ${this.activeSavedView === view.id ? "selected" : ""}>${esc(view.name)}</option>`).join("");
     return `
       <section class="toolbar card">
         <label class="search"><ha-icon icon="mdi:magnify"></ha-icon><input id="search" value="${esc(this.query)}" placeholder="${this.t("search")}"></label>
+        <select id="saved-view"><option value="">${this.t("savedViews")}</option>${savedViewOptions}</select>
+        <button class="secondary icon-button" data-action="save-view" title="${this.t("saveView")}"><ha-icon icon="mdi:content-save-outline"></ha-icon></button>
+        <button class="secondary icon-button" data-action="delete-view" title="${this.t("deleteView")}" ${this.activeSavedView ? "" : "disabled"}><ha-icon icon="mdi:bookmark-remove-outline"></ha-icon></button>
+        <details class="columns-menu"><summary class="secondary"><ha-icon icon="mdi:view-column-outline"></ha-icon>${this.t("columns")}</summary><div class="columns-popover">
+          <div class="column-list">${this.renderColumnSettings()}</div>
+          <div class="density-setting"><span>${this.t("density")}</span>${["compact", "normal", "comfortable"].map(value => `<button class="${this.tableDensity === value ? "active" : ""}" data-density="${value}">${this.t(`${value}Density`)}</button>`).join("")}</div>
+          <button class="secondary compact reset-columns" data-action="reset-columns"><ha-icon icon="mdi:restore"></ha-icon>${this.t("resetColumns")}</button>
+        </div></details>
         <input type="file" id="csv-file" accept=".csv,text/csv" hidden>
         <button class="secondary" data-action="csv"><ha-icon icon="mdi:file-upload-outline"></ha-icon>${this.t("chooseCsv")}</button>
         <button class="secondary" data-action="export"><ha-icon icon="mdi:file-download-outline"></ha-icon>${this.t("exportCsv")}</button>
@@ -271,19 +404,33 @@ class NetworkInventoryPanel extends HTMLElement {
         <select id="tag-filter"><option value="">${this.t("allTags")}</option>${tagOptions}</select>
         <button class="secondary" data-action="clear-filters"><ha-icon icon="mdi:filter-off-outline"></ha-icon>${this.t("clearFilters")}</button>
       </section>
-      <section class="bulk-toolbar card ${selectedCount ? "active" : ""}"><label><input id="select-all-devices" type="checkbox" ${allFilteredSelected ? "checked" : ""}>${this.t("selectAll")}</label><span id="selected-count">${selectedCount} ${this.t("selected")}</span><div><button class="secondary compact" data-action="clear-selection" ${selectedCount ? "" : "disabled"}>${this.t("clearSelection")}</button><button class="primary compact" data-action="bulk-edit" ${selectedCount ? "" : "disabled"}><ha-icon icon="mdi:pencil-multiple-outline"></ha-icon>${this.t("bulkEdit")}</button></div></section>
+      <section class="bulk-toolbar card ${selectedCount ? "active" : ""}"><label><input id="select-all-devices" type="checkbox" ${allFilteredSelected ? "checked" : ""}>${this.t("selectAll")}</label><span id="result-count">${devices.length} ${this.t("results")}</span><span id="selected-count">${selectedCount} ${this.t("selected")}</span><div><button class="secondary compact" data-action="clear-selection" ${selectedCount ? "" : "disabled"}>${this.t("clearSelection")}</button><button class="primary compact" data-action="bulk-edit" ${selectedCount ? "" : "disabled"}><ha-icon icon="mdi:pencil-multiple-outline"></ha-icon>${this.t("bulkEdit")}</button></div></section>
       <section class="table-card">
-        <div class="table-scroll"><table class="device-table" style="width:${tableWidth}px"><colgroup><col style="width:44px">${columns.map(column => `<col data-column-col="${column.key}" style="width:${this.columnWidths[column.key]}px">`).join("")}</colgroup><thead><tr>
+        <div class="table-scroll"><table class="device-table density-${this.tableDensity}" style="width:${tableWidth}px"><colgroup><col style="width:44px">${columns.map(column => `<col data-column-col="${column.key}" style="width:${this.columnWidths[column.key]}px">`).join("")}</colgroup><thead><tr>
           <th class="select-head"><input id="select-all-table" type="checkbox" ${allFilteredSelected ? "checked" : ""} aria-label="${this.t("selectAll")}"></th>
-          ${columns.map(column => `<th data-column="${column.key}">${column.label}<span class="column-resizer" data-resize-column="${column.key}"></span></th>`).join("")}
-        </tr></thead><tbody>${devices.map(d => this.deviceRow(d)).join("")}</tbody></table></div>
-        ${devices.length ? "" : `<div class="empty"><ha-icon icon="mdi:devices-off"></ha-icon><p>${this.t("empty")}</p></div>`}
+          ${columns.map(column => `<th data-column="${column.key}" class="${column.pinned ? "pinned-column" : ""}" style="${column.pinned ? `left:${column.left}px` : ""}"><button data-sort-column="${column.key}">${column.label}<ha-icon icon="${this.sortKey === column.key ? (this.sortDirection === "asc" ? "mdi:arrow-up" : "mdi:arrow-down") : "mdi:unfold-more-horizontal"}"></ha-icon></button><span class="column-resizer" data-resize-column="${column.key}"></span></th>`).join("")}
+        </tr></thead><tbody>${devices.map(d => this.deviceRow(d, columns)).join("")}</tbody></table></div>
+        <div id="devices-empty" class="empty" ${devices.length ? "hidden" : ""}><ha-icon icon="mdi:devices-off"></ha-icon><p>${this.t("empty")}</p></div>
       </section>
       <button class="drawer-scrim ${activeDevice ? "open" : ""}" data-close-drawer aria-label="${this.t("cancel")}"></button>
       <aside id="device-drawer" class="device-drawer ${activeDevice ? "open" : ""}">${activeDevice ? this.renderDeviceDrawer(activeDevice) : ""}</aside>`;
   }
 
   deviceColumns() {
+    const definitions = this.allDeviceColumns();
+    const ordered = this.columnOrder.map(key => definitions.find(column => column.key === key)).filter(Boolean);
+    const visible = ordered.filter(column => this.visibleColumns.has(column.key));
+    const columns = [...visible.filter(column => this.pinnedColumns.has(column.key)), ...visible.filter(column => !this.pinnedColumns.has(column.key))];
+    let left = 44;
+    return columns.map(column => {
+      const pinned = this.pinnedColumns.has(column.key);
+      const result = { ...column, pinned, left };
+      if (pinned) left += this.columnWidths[column.key];
+      return result;
+    });
+  }
+
+  allDeviceColumns() {
     return [
       { key: "device_code", label: this.t("code") }, { key: "name", label: this.t("name") },
       { key: "status", label: this.t("status") }, { key: "device_type", label: this.t("type") },
@@ -296,20 +443,33 @@ class NetworkInventoryPanel extends HTMLElement {
     ];
   }
 
-  deviceRow(d) {
-    const protocol = this.data.protocols[d.protocol] || { label: d.protocol, color: "#64748b" };
-    const unifi = this.data.unifi_matches?.[d.id];
+  renderColumnSettings() {
+    const definitions = this.allDeviceColumns();
+    return this.columnOrder.map(key => {
+      const column = definitions.find(item => item.key === key);
+      return `<div class="column-option" draggable="true" data-column-option="${key}"><ha-icon class="drag-handle" icon="mdi:drag"></ha-icon><label><input type="checkbox" data-column-visible="${key}" ${this.visibleColumns.has(key) ? "checked" : ""}>${column.label}</label><button class="pin-column ${this.pinnedColumns.has(key) ? "active" : ""}" data-pin-column="${key}" title="${this.t("pin")}"><ha-icon icon="mdi:pin-outline"></ha-icon></button></div>`;
+    }).join("");
+  }
+
+  deviceRow(d, columns = this.deviceColumns()) {
     return `<tr class="device-row ${this.activeDeviceId === d.id ? "active" : ""}" data-device-row="${esc(d.id)}" tabindex="0">
       <td class="select-cell"><input type="checkbox" data-select-device="${esc(d.id)}" ${this.selectedDevices.has(d.id) ? "checked" : ""} aria-label="${this.t("selected")}"></td>
-      <td><span class="code">${d.device_code}</span></td>
-      <td class="device-name-cell"><strong>${esc(d.name)}</strong>${unifi ? `<span class="unifi-dot" title="${this.t("unifiBadge")}"></span>` : ""}</td>
-      <td>${this.statusBadge(d.status)}</td>
-      <td>${esc(d.device_type || "—")}</td><td>${esc(d.brand || "—")}</td><td>${esc(d.model || "—")}</td><td>${esc(d.area || "—")}</td>
-      <td><span class="pill" style="--pill:${safeColor(protocol.color)}">${esc(protocol.label)}</span></td>
-      <td class="mono">${esc(d.mac || "—")}</td><td class="mono">${esc(d.ip_address || "—")}</td>
-      <td>${esc(d.network || "—")}</td><td>${esc(d.vlan || "—")}</td><td>${esc(d.ssid || "—")}</td>
-      <td>${esc(d.connected_device || "—")}</td><td>${esc(d.switch_port || "—")}</td><td>${this.tagChips(d.tags)}</td>
+      ${columns.map(column => `<td data-column-cell="${column.key}" class="${column.pinned ? "pinned-column" : ""} ${["device_code", "mac", "ip_address"].includes(column.key) ? "mono" : ""}" style="${column.pinned ? `left:${column.left}px` : ""}">${this.deviceCell(d, column.key)}</td>`).join("")}
     </tr>`;
+  }
+
+  deviceCell(device, key) {
+    const value = device[key];
+    if (key === "device_code") return `<span class="code">${esc(value)}</span><button class="copy-cell" data-copy="${esc(value)}"><ha-icon icon="mdi:content-copy"></ha-icon></button>`;
+    if (key === "name") return `<span class="device-name-cell"><strong>${esc(device.name)}</strong>${device.ha_device_kind === "child" ? `<ha-icon class="child-device-icon" icon="mdi:file-tree-outline" title="${this.t("childDevice")}"></ha-icon>` : ""}${this.data.unifi_matches?.[device.id] ? `<span class="unifi-dot" title="${this.t("unifiBadge")}"></span>` : ""}</span>`;
+    if (key === "status") return this.statusBadge(device.status);
+    if (key === "protocol") {
+      const protocol = this.data.protocols[device.protocol] || { label: device.protocol, color: "#64748b" };
+      return `<span class="pill" style="--pill:${safeColor(protocol.color)}">${esc(protocol.label)}</span>`;
+    }
+    if (key === "mac" || key === "ip_address") return `<span>${esc(value || "—")}</span>${value ? `<button class="copy-cell" data-copy="${esc(value)}"><ha-icon icon="mdi:content-copy"></ha-icon></button>` : ""}`;
+    if (key === "tags") return this.tagChips(device.tags);
+    return esc(value || "—");
   }
 
   statusBadge(status) {
@@ -325,10 +485,10 @@ class NetworkInventoryPanel extends HTMLElement {
     const row = (label, value, mono = false) => `<div><span>${label}</span><strong class="${mono ? "mono" : ""}">${esc(value || "—")}</strong></div>`;
     return `<div class="drawer-head"><div><span class="code">#${esc(device.device_code)}</span><h2>${esc(device.name)}</h2><div class="drawer-badges">${this.statusBadge(device.status)}<span class="pill" style="--pill:${safeColor(protocol.color)}">${esc(protocol.label)}</span>${unifi ? `<span class="unifi-badge"><ha-icon icon="mdi:access-point-network"></ha-icon>UniFi</span>` : ""}</div></div><button data-close-drawer title="${this.t("cancel")}"><ha-icon icon="mdi:close"></ha-icon></button></div>
       <div class="drawer-body">
-        <section><h3>${this.t("details")}</h3>${row(this.t("type"), device.device_type)}${row(this.t("brand"), device.brand)}${row(this.t("model"), device.model)}${row(this.t("area"), device.area)}${this.tagChips(device.tags)}</section>
+        <section><h3>${this.t("details")}</h3>${row(this.t("type"), device.device_type)}${row(this.t("brand"), device.brand)}${row(this.t("model"), device.model)}${row(this.t("area"), device.area)}${device.ha_device_kind ? row(this.t("homeAssistant"), this.t(device.ha_device_kind === "child" ? "childDevice" : "mainDevice")) : ""}${device.parent_device_name ? row(this.t("parentDevice"), device.parent_device_name) : ""}${this.tagChips(device.tags)}</section>
         <section><h3>${this.t("networkDetails")}</h3>${row(this.t("address"), device.mac, true)}${row(this.t("ip"), device.ip_address, true)}${row(this.t("network"), device.network)}${row(this.t("vlan"), device.vlan)}${row(this.t("ssid"), device.ssid)}${row(this.t("connectedDevice"), device.connected_device)}${row(this.t("switchPort"), device.switch_port)}${mismatch ? `<button class="drawer-inline-action" data-sync-ip="${esc(device.id)}"><ha-icon icon="mdi:sync"></ha-icon>${this.t(device.ip_address ? "updateInventoryIp" : "addInventoryIp")} · ${esc(unifi.ip_address)}</button>` : ""}${duplicates.length ? `<p class="drawer-warning"><ha-icon icon="mdi:alert-circle-outline"></ha-icon>${this.t("sharedWith")}: ${esc(duplicates.map(item => `#${item.device_code} ${item.name}`).join(", "))}</p>` : ""}</section>
         ${unifi ? `<section><h3>UniFi</h3>${row(this.t("type"), unifi.connection_type)}${row(this.t("firmware"), unifi.firmware_version)}${row(this.t("uplink"), [unifi.uplink_name, unifi.uplink_model, unifi.uplink_ip].filter(Boolean).join(" · "))}${row(this.t("connectedSince"), formatDate(unifi.connected_at))}${row(this.t("lastRefresh"), formatDate(this.data.integrations?.unifi?.last_refreshed))}</section>` : ""}
-        <section><h3>${this.t("identifier")}</h3>${row(this.t("identifier"), device.device_identifier, true)}${row(this.t("entityName"), device.entity_name, true)}${row(this.t("integration"), device.integration)}${row(this.t("comments"), device.comments)}${row(this.t("createdAt"), formatDate(device.created_at))}${row(this.t("updatedAt"), formatDate(device.updated_at))}</section>
+        <section><h3>${this.t("identifier")}</h3>${row(this.t("identifier"), device.device_identifier, true)}${row(this.t("entityName"), device.entity_name, true)}${row(this.t("integration"), device.integration)}${device.ha_config_entry_id ? row("Config entry", device.ha_config_entry_id, true) : ""}${device.ha_config_subentry_id ? row("Config subentry", device.ha_config_subentry_id, true) : ""}${row(this.t("comments"), device.comments)}${row(this.t("createdAt"), formatDate(device.created_at))}${row(this.t("updatedAt"), formatDate(device.updated_at))}</section>
       </div>
       <div class="drawer-actions">${unifi ? `<a class="secondary drawer-icon-action" href="https://unifi.ui.com" target="_blank" rel="noopener noreferrer" title="${this.t("openUnifi")}"><ha-icon icon="mdi:open-in-new"></ha-icon></a>` : ""}${this.data.integrations?.niimbot?.connected ? `<button class="secondary" data-print-label="${esc(device.id)}"><ha-icon icon="mdi:printer-outline"></ha-icon>${this.t("printLabel")}</button>` : ""}<button class="primary" data-edit="${esc(device.id)}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${this.t("edit")}</button><button class="secondary danger-text drawer-icon-action" data-delete="${esc(device.id)}" title="${this.t("delete")}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div>`;
   }
@@ -353,7 +513,7 @@ class NetworkInventoryPanel extends HTMLElement {
     return `<section class="section-head"><div><h2>${this.t("homeAssistant")}</h2><p>${this.t("importHa")}</p></div></section>
       <section class="import-grid">${devices.map((d, index) => {
         const p = this.data.protocols[d.protocol] || this.data.protocols.other;
-        return `<article class="import-card"><div class="device-icon"><ha-icon icon="mdi:devices"></ha-icon></div><div class="grow"><h3>${esc(d.name)}</h3><p>${esc([d.brand, d.model].filter(Boolean).join(" · "))}</p><div class="meta"><span>${esc(d.area || "—")}</span><span>${esc(d.integration || "—")}</span><span class="pill" style="--pill:${safeColor(p.color)}">${esc(p.label)}</span></div></div><button class="primary compact" data-import="${index}">${this.t("import")}</button></article>`;
+        return `<article class="import-card"><div class="device-icon"><ha-icon icon="${d.ha_device_kind === "child" ? "mdi:file-tree-outline" : "mdi:devices"}"></ha-icon></div><div class="grow"><h3>${esc(d.name)}</h3><p>${esc([d.brand, d.model].filter(Boolean).join(" · "))}</p><div class="meta"><span>${esc(d.area || "—")}</span><span>${esc(d.integration || "—")}</span><span>${this.t(d.ha_device_kind === "child" ? "childDevice" : "mainDevice")}${d.parent_device_name ? ` · ${esc(d.parent_device_name)}` : ""}</span><span class="pill" style="--pill:${safeColor(p.color)}">${esc(p.label)}</span></div></div><button class="primary compact" data-import="${index}">${this.t("import")}</button></article>`;
       }).join("")}</section>${devices.length ? "" : `<div class="empty standalone"><ha-icon icon="mdi:check-circle-outline"></ha-icon><p>${this.t("noHa")}</p></div>`}`;
   }
 
@@ -486,15 +646,66 @@ class NetworkInventoryPanel extends HTMLElement {
     });
     this.shadowRoot.querySelector("[data-action='clear-selection']")?.addEventListener("click", () => { this.selectedDevices.clear(); this.updateSelectionUi(); });
     this.shadowRoot.querySelector("[data-action='bulk-edit']")?.addEventListener("click", () => this.openBulkEditModal());
-    this.shadowRoot.querySelector("#search")?.addEventListener("input", event => { this.query = event.target.value; this.refreshDeviceBody(); });
+    this.shadowRoot.querySelector("#search")?.addEventListener("input", event => {
+      this.query = event.target.value;
+      this.activeSavedView = "";
+      this.syncFiltersToUrl();
+      this.refreshDeviceBody();
+    });
     [["protocol", "protocolFilter"], ["type", "typeFilter"], ["brand", "brandFilter"], ["area", "areaFilter"], ["status", "statusFilter"], ["ip", "ipFilter"], ["tag", "tagFilter"]].forEach(([id, property]) => {
-      this.shadowRoot.querySelector(`#${id}-filter`)?.addEventListener("change", event => { this[property] = event.target.value; this.render(); });
+      this.shadowRoot.querySelector(`#${id}-filter`)?.addEventListener("change", event => {
+        this[property] = event.target.value;
+        this.activeSavedView = "";
+        this.syncFiltersToUrl();
+        this.render();
+      });
     });
     this.shadowRoot.querySelector("[data-action='clear-filters']")?.addEventListener("click", () => {
       this.protocolFilter = this.typeFilter = this.brandFilter = this.areaFilter = this.statusFilter = this.ipFilter = this.tagFilter = "";
       this.query = "";
+      this.activeSavedView = "";
+      this.syncFiltersToUrl();
       this.render();
     });
+    this.shadowRoot.querySelector("#saved-view")?.addEventListener("change", event => this.applySavedView(event.target.value));
+    this.shadowRoot.querySelector("[data-action='save-view']")?.addEventListener("click", () => this.saveCurrentView());
+    this.shadowRoot.querySelector("[data-action='delete-view']")?.addEventListener("click", () => this.deleteCurrentView());
+    this.shadowRoot.querySelector("[data-action='reset-columns']")?.addEventListener("click", () => this.resetColumns());
+    this.shadowRoot.querySelectorAll("[data-sort-column]").forEach(button => button.addEventListener("click", () => {
+      const key = button.dataset.sortColumn;
+      this.sortDirection = this.sortKey === key && this.sortDirection === "asc" ? "desc" : "asc";
+      this.sortKey = key;
+      this.activeSavedView = "";
+      this.syncFiltersToUrl();
+      this.render();
+    }));
+    this.shadowRoot.querySelectorAll("[data-column-visible]").forEach(input => input.addEventListener("change", () => {
+      if (input.checked) this.visibleColumns.add(input.dataset.columnVisible); else this.visibleColumns.delete(input.dataset.columnVisible);
+      if (!this.visibleColumns.size) {
+        this.visibleColumns.add(input.dataset.columnVisible);
+        input.checked = true;
+        return;
+      }
+      this.activeSavedView = "";
+      this.saveTablePreferences();
+      this.render();
+    }));
+    this.shadowRoot.querySelectorAll("[data-pin-column]").forEach(button => button.addEventListener("click", event => {
+      event.preventDefault();
+      const key = button.dataset.pinColumn;
+      if (this.pinnedColumns.has(key)) this.pinnedColumns.delete(key); else this.pinnedColumns.add(key);
+      this.activeSavedView = "";
+      this.saveTablePreferences();
+      this.render();
+    }));
+    this.shadowRoot.querySelectorAll("[data-density]").forEach(button => button.addEventListener("click", event => {
+      event.preventDefault();
+      this.tableDensity = button.dataset.density;
+      this.activeSavedView = "";
+      this.saveTablePreferences();
+      this.render();
+    }));
+    this.bindColumnOrdering();
     this.shadowRoot.querySelector("[data-action='export']")?.addEventListener("click", () => this.exportCsv());
     this.shadowRoot.querySelector("[data-action='csv']")?.addEventListener("click", () => this.shadowRoot.querySelector("#csv-file").click());
     this.shadowRoot.querySelector("#csv-file")?.addEventListener("change", event => this.importCsv(event.target.files[0]));
@@ -530,6 +741,10 @@ class NetworkInventoryPanel extends HTMLElement {
     if (!tbody) return;
     const devices = this.filteredDevices();
     tbody.innerHTML = devices.map(d => this.deviceRow(d)).join("");
+    const resultCount = this.shadowRoot.querySelector("#result-count");
+    if (resultCount) resultCount.textContent = `${devices.length} ${this.t("results")}`;
+    const empty = this.shadowRoot.querySelector("#devices-empty");
+    if (empty) empty.hidden = Boolean(devices.length);
     tbody.querySelectorAll("[data-select-device]").forEach(input => input.addEventListener("change", () => {
       if (input.checked) this.selectedDevices.add(input.dataset.selectDevice); else this.selectedDevices.delete(input.dataset.selectDevice);
       this.updateSelectionUi();
@@ -547,6 +762,39 @@ class NetworkInventoryPanel extends HTMLElement {
       };
       row.addEventListener("click", open);
       row.addEventListener("keydown", open);
+    });
+    this.bindCopyButtons(root);
+  }
+
+  bindCopyButtons(root = this.shadowRoot) {
+    root.querySelectorAll("[data-copy]").forEach(button => button.addEventListener("click", async event => {
+      event.stopPropagation();
+      await navigator.clipboard.writeText(button.dataset.copy);
+      this.toast(this.t("copied"));
+    }));
+  }
+
+  bindColumnOrdering() {
+    let draggedKey = "";
+    this.shadowRoot.querySelectorAll("[data-column-option]").forEach(option => {
+      option.addEventListener("dragstart", event => {
+        draggedKey = option.dataset.columnOption;
+        option.classList.add("dragging");
+        event.dataTransfer.effectAllowed = "move";
+      });
+      option.addEventListener("dragend", () => option.classList.remove("dragging"));
+      option.addEventListener("dragover", event => event.preventDefault());
+      option.addEventListener("drop", event => {
+        event.preventDefault();
+        const targetKey = option.dataset.columnOption;
+        if (!draggedKey || draggedKey === targetKey) return;
+        const order = this.columnOrder.filter(key => key !== draggedKey);
+        order.splice(order.indexOf(targetKey), 0, draggedKey);
+        this.columnOrder = order;
+        this.activeSavedView = "";
+        this.saveTablePreferences();
+        this.render();
+      });
     });
   }
 
@@ -755,7 +1003,7 @@ class NetworkInventoryPanel extends HTMLElement {
 
   filteredDevices() {
     const q = this.query.toLowerCase();
-    return [...this.data.devices].filter(device =>
+    const devices = [...this.data.devices].filter(device =>
       (!this.protocolFilter || device.protocol === this.protocolFilter) &&
       (!this.typeFilter || device.device_type === this.typeFilter) &&
       (!this.brandFilter || device.brand === this.brandFilter) &&
@@ -764,7 +1012,16 @@ class NetworkInventoryPanel extends HTMLElement {
       (!this.tagFilter || (device.tags || []).includes(this.tagFilter)) &&
       (!this.ipFilter || (this.ipFilter === "mismatch" && this.hasIpMismatch(device)) || (this.ipFilter === "duplicate" && this.devicesWithIp(device.ip_address).length > 1)) &&
       (!q || Object.values(device).join(" ").toLowerCase().includes(q))
-    ).sort((a,b) => a.device_code-b.device_code);
+    );
+    const sortValue = device => this.sortKey === "tags" ? (device.tags || []).join(" ") : device[this.sortKey];
+    return devices.sort((a, b) => {
+      const first = sortValue(a);
+      const second = sortValue(b);
+      const comparison = typeof first === "number" && typeof second === "number"
+        ? first - second
+        : String(first || "").localeCompare(String(second || ""), undefined, { numeric: true, sensitivity: "base" });
+      return (comparison || a.device_code - b.device_code) * (this.sortDirection === "desc" ? -1 : 1);
+    });
   }
 
   openBulkEditModal() {
@@ -828,7 +1085,8 @@ class NetworkInventoryPanel extends HTMLElement {
     const selectedTags = new Set(device?.tags || []);
     const tagOptions = (this.data.tags || []).map(tag => `<label><input type="checkbox" name="tags" value="${esc(tag)}" ${selectedTags.has(tag) ? "checked" : ""}>${esc(tag)}</label>`).join("");
     const isEdit = Boolean(device && !isImport);
-    const ipRequired = ["wifi", "ethernet"].includes(device?.protocol || "wifi");
+    const isChildDevice = device?.ha_device_kind === "child";
+    const ipRequired = !isChildDevice && ["wifi", "ethernet"].includes(device?.protocol || "wifi");
     const modal = this.shadowRoot.querySelector("#modal");
     modal.innerHTML = `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><div><h2>${isEdit ? this.t("edit") : this.t("addDevice")}</h2><p>${isEdit ? `${this.t("code")}: ${device.device_code}` : this.t("autoId")}</p></div><button type="button" data-close><ha-icon icon="mdi:close"></ha-icon></button></div>
       <form id="device-form"><div class="form-grid">
@@ -838,7 +1096,7 @@ class NetworkInventoryPanel extends HTMLElement {
         <label>${this.t("brand")}<select name="brand" required><option value=""></option>${brandOptions}</select></label>${field("model", this.t("model"), device?.model)}
         <label>${this.t("area")}<input name="area" list="area-options" value="${esc(device?.area || "")}" required><datalist id="area-options">${areaOptions}</datalist></label>
         <label>${this.t("protocol")}<select name="protocol" required>${protocols}</select><small>${isEdit ? this.t("stableId") : ""}</small></label>
-        ${field("mac", this.t("address"), device?.mac, true)}${field("ip_address", this.t("ip"), device?.ip_address, ipRequired)}
+        ${field("mac", this.t("address"), device?.mac, !isChildDevice)}${field("ip_address", this.t("ip"), device?.ip_address, ipRequired)}
         ${field("device_identifier", this.t("identifier"), device?.device_identifier)}${field("entity_name", this.t("entityName"), device?.entity_name)}
         ${field("integration", this.t("integration"), device?.integration)}
         <label>${this.t("status")}<select name="status"><option value="unknown">${this.t("unknown")}</option><option value="online" ${device?.status === "online" ? "selected" : ""}>Online</option><option value="offline" ${device?.status === "offline" ? "selected" : ""}>Offline</option></select></label>
@@ -849,7 +1107,7 @@ class NetworkInventoryPanel extends HTMLElement {
     modal.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", () => modal.innerHTML = ""));
     const protocolSelect = modal.querySelector("[name='protocol']");
     const ipInput = modal.querySelector("[name='ip_address']");
-    protocolSelect.addEventListener("change", () => { ipInput.required = ["wifi", "ethernet"].includes(protocolSelect.value); });
+    protocolSelect.addEventListener("change", () => { ipInput.required = !isChildDevice && ["wifi", "ethernet"].includes(protocolSelect.value); });
     modal.querySelector("[data-clear-id]")?.addEventListener("click", () => {
       modal.querySelector("[name='device_code']").value = "";
       modal.querySelector("[data-id-help]").textContent = this.t("newIdHelp");
@@ -1038,6 +1296,8 @@ const BASE_CSS = `
   @media(max-width:900px){.stats{grid-template-columns:repeat(2,1fr)}.grid-two,.import-grid{grid-template-columns:1fr}.toolbar{flex-wrap:wrap}.search{flex-basis:100%}.filters{grid-template-columns:repeat(2,minmax(0,1fr))}.protocol-setting{grid-template-columns:1fr 1fr 1fr}.protocol-setting .danger-icon{align-self:end}.app{padding:18px 14px 50px}.integration-card{flex-wrap:wrap}.integration-actions{width:100%;justify-content:flex-end}}
   @media(max-width:600px){header{align-items:flex-start}header h1{font-size:22px}header .primary{font-size:0;width:42px;padding:0}header .primary ha-icon{font-size:initial}.stats{gap:9px}.stat{padding:13px;gap:10px}.stat-icon{width:38px;height:38px}.stat strong{font-size:20px}.nav{padding:11px 12px}.nav span{font-size:12px}.toolbar .secondary{flex:1;font-size:12px;padding:0 8px}.filters{grid-template-columns:1fr}.bulk-toolbar{align-items:flex-start;flex-wrap:wrap}.bulk-toolbar>div{width:100%;margin-left:0}.bulk-toolbar>div button{flex:1}.form-grid{grid-template-columns:1fr}.form-grid .full,.network-fields,.network-fields label:last-child{grid-column:auto}.network-fields{grid-template-columns:1fr}.tag-picker[open]>div{grid-template-columns:repeat(2,1fr)}.bulk-form{grid-template-columns:1fr}.bulk-tags{grid-column:auto}.bulk-tag-options{grid-template-columns:repeat(2,1fr)}.protocol-setting{grid-template-columns:1fr 1fr}.import-card{align-items:flex-start}.import-card .primary{align-self:center}.section-head{align-items:flex-start}.section-head .secondary{font-size:0;width:42px;padding:0}.section-head .secondary ha-icon{font-size:initial}.inline-form{align-items:stretch;flex-direction:column}.inline-form button{width:100%}.detail-list>div{grid-template-columns:1fr;gap:4px}.backup-actions{flex-wrap:wrap;justify-content:flex-end}.change-list>div{grid-template-columns:1fr}.change-list ha-icon{transform:rotate(90deg)}table,thead,tbody,tr,th,td{display:block}thead{display:none}tbody{display:grid;gap:10px;padding:10px}tr{border:1px solid var(--divider-color);border-radius:10px;padding:10px}td{border:0;padding:6px}td:first-child{float:right}.row-actions{justify-content:flex-start}}
   .table-card{border-radius:10px}.table-scroll{overflow:auto;max-height:calc(100vh - 330px);min-height:260px}.device-table{table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:12px}.device-table th{position:sticky;top:0;z-index:3;width:auto;height:43px;padding:0 12px;background:var(--card-background-color);border-bottom:1px solid var(--divider-color);white-space:nowrap;text-transform:none;font-size:11px;letter-spacing:0}.device-table th:not(:last-child),.device-table td:not(:last-child){border-right:1px solid color-mix(in srgb,var(--divider-color) 55%,transparent)}.device-table td{height:45px;padding:8px 12px;border-top:0;border-bottom:1px solid var(--divider-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}.device-table .select-head,.device-table .select-cell{position:sticky;left:0;z-index:4;padding:0;text-align:center;background:var(--card-background-color)}.device-table .select-cell{z-index:2}.device-table tbody tr{cursor:pointer;outline:none}.device-table tbody tr:hover td,.device-table tbody tr:hover .select-cell{background:color-mix(in srgb,var(--primary-color) 6%,var(--card-background-color))}.device-table tbody tr.active td,.device-table tbody tr.active .select-cell{background:color-mix(in srgb,var(--primary-color) 12%,var(--card-background-color))}.device-table tbody tr.active td:first-child{box-shadow:inset 3px 0 var(--primary-color)}.device-table .tag-list{margin:0;flex-wrap:nowrap;overflow:hidden}.device-table .tag-list span{flex:0 0 auto}.device-name-cell strong{display:inline-block;max-width:calc(100% - 18px);overflow:hidden;text-overflow:ellipsis;vertical-align:middle}.unifi-dot{display:inline-block;width:7px;height:7px;margin-left:7px;border-radius:50%;background:#0ea5e9;vertical-align:middle}.column-resizer{position:absolute;z-index:5;top:0;right:-4px;width:9px;height:100%;cursor:col-resize;touch-action:none}.column-resizer:hover,.column-resizer:active{background:color-mix(in srgb,var(--primary-color) 45%,transparent)}.device-status{display:inline-flex;align-items:center;gap:6px;text-transform:capitalize}.device-status i{width:7px;height:7px;border-radius:50%;background:#94a3b8}.device-status.online i{background:#22c55e}.device-status.offline i{background:#ef4444}
+  .toolbar{align-items:center;flex-wrap:wrap}.toolbar>select{max-width:180px}.icon-button{width:42px;padding:0}.columns-menu{position:relative}.columns-menu>summary{list-style:none;cursor:pointer}.columns-menu>summary::-webkit-details-marker{display:none}.columns-popover{position:absolute;z-index:20;top:48px;right:0;width:340px;padding:12px;border:1px solid var(--divider-color);border-radius:12px;background:var(--card-background-color);box-shadow:0 14px 38px #0003}.column-list{display:grid;gap:3px;max-height:390px;overflow:auto}.column-option{display:grid;grid-template-columns:24px minmax(0,1fr) 34px;align-items:center;gap:7px;min-height:38px;padding:3px 4px;border-radius:8px}.column-option:hover{background:var(--secondary-background-color)}.column-option.dragging{opacity:.4}.drag-handle{--mdc-icon-size:18px;color:var(--secondary-text-color);cursor:grab}.column-option label{display:flex;align-items:center;gap:8px;font-size:12px}.column-option input{width:16px;height:16px;accent-color:var(--primary-color)}.pin-column{width:32px;height:32px;border-radius:7px;color:var(--secondary-text-color)}.pin-column.active{color:var(--primary-color);background:color-mix(in srgb,var(--primary-color) 12%,transparent)}.density-setting{display:grid;grid-template-columns:1fr repeat(3,auto);align-items:center;gap:4px;margin:10px 0;padding-top:10px;border-top:1px solid var(--divider-color);font-size:11px;color:var(--secondary-text-color)}.density-setting button{padding:7px;border-radius:7px}.density-setting button.active{background:var(--primary-color);color:#fff}.reset-columns{width:100%}
+  .device-table th>button{width:calc(100% - 8px);height:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;text-align:left;font-weight:700;color:inherit}.device-table th>button ha-icon{--mdc-icon-size:15px;color:var(--secondary-text-color)}.device-table.density-compact td{height:37px;padding-top:5px;padding-bottom:5px}.device-table.density-comfortable td{height:55px;padding-top:12px;padding-bottom:12px}.device-table .pinned-column{position:sticky;z-index:2;background:var(--card-background-color)}.device-table th.pinned-column{z-index:4}.device-table .select-head{z-index:5}.device-table .select-cell{z-index:3}.device-name-cell{display:inline-flex;align-items:center;max-width:100%;gap:6px}.child-device-icon{--mdc-icon-size:15px;color:var(--secondary-text-color);flex:0 0 auto}.copy-cell{width:26px;height:26px;margin-left:5px;border-radius:6px;vertical-align:middle;opacity:0;color:var(--secondary-text-color)}td:hover>.copy-cell,.copy-cell:focus{opacity:1}.copy-cell:hover{background:var(--secondary-background-color);color:var(--primary-color)}.copy-cell ha-icon{--mdc-icon-size:14px}
   .device-drawer{position:fixed;z-index:25;top:0;right:0;bottom:0;width:min(440px,100vw);display:flex;flex-direction:column;background:var(--card-background-color);border-left:1px solid var(--divider-color);box-shadow:-14px 0 40px #0003;transform:translateX(105%);transition:transform .2s ease}.device-drawer.open{transform:translateX(0)}.drawer-head{padding:22px 20px 18px;border-bottom:1px solid var(--divider-color);display:flex;align-items:flex-start;justify-content:space-between;gap:15px}.drawer-head h2{font-size:21px;margin:5px 0 10px}.drawer-head>button{width:38px;height:38px;display:grid;place-items:center;border-radius:8px}.drawer-head>button:hover{background:var(--secondary-background-color)}.drawer-badges{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.drawer-body{flex:1;overflow:auto;padding:14px 20px 24px}.drawer-body section{margin-bottom:14px;padding:16px;border:1px solid var(--divider-color);border-radius:12px;background:color-mix(in srgb,var(--secondary-background-color) 42%,var(--card-background-color))}.drawer-body section h3{margin-bottom:11px}.drawer-body section>div:not(.tag-list){display:grid;grid-template-columns:135px minmax(0,1fr);gap:12px;padding:8px 0;border-bottom:1px solid color-mix(in srgb,var(--divider-color) 75%,transparent)}.drawer-body section>div:last-of-type{border-bottom:0}.drawer-body section span{font-size:11px;color:var(--secondary-text-color)}.drawer-body section strong{font-size:12px;text-align:right;overflow-wrap:anywhere}.drawer-body .tag-list{margin-top:12px}.drawer-inline-action{width:100%;margin-top:12px;padding:9px;border-radius:8px;display:flex;align-items:center;justify-content:center;gap:7px;color:#b45309;background:#fef3c7}.drawer-warning{display:flex;align-items:flex-start;gap:6px;margin-top:10px;color:var(--error-color,#c62828);font-size:11px}.drawer-warning ha-icon{--mdc-icon-size:16px;flex:0 0 auto}.drawer-actions{padding:14px 16px;border-top:1px solid var(--divider-color);display:flex;justify-content:flex-end;gap:8px;background:var(--card-background-color)}.drawer-actions .drawer-icon-action{width:42px;padding:0;text-decoration:none}.drawer-actions .primary{flex:1}.drawer-scrim{display:none;position:fixed;z-index:24;inset:0;background:#0006}
   @media(max-width:900px){.table-scroll{max-height:calc(100vh - 390px)}.drawer-scrim.open{display:block}}
   @media(max-width:600px){.device-table{display:table}.device-table thead{display:table-header-group}.device-table tbody{display:table-row-group;padding:0}.device-table tr{display:table-row;border:0;padding:0}.device-table th,.device-table td{display:table-cell}.device-table thead{display:table-header-group}.device-table td:first-child{float:none}.table-scroll{max-height:calc(100vh - 470px)}.drawer-head{padding-top:18px}.drawer-actions .secondary:not(.drawer-icon-action){font-size:0;width:42px;padding:0}.drawer-actions .secondary ha-icon{font-size:initial}}
