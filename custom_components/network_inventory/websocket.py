@@ -106,17 +106,28 @@ async def websocket_list(
     data["unifi_items"] = unifi_items
     data["unifi_matches"] = unifi_matches
     data["ha_devices"] = _home_assistant_devices(hass, data["devices"])
+    data["ha_entities"] = _home_assistant_entities(hass)
     data["battery_entities"] = _battery_entities(hass)
-    battery_by_device = {
-        item["device_id"]: item["entity_id"]
-        for item in data["battery_entities"]
-        if item["device_id"]
-    }
+    battery_by_device: dict[str, list[str]] = {}
+    for item in data["battery_entities"]:
+        if item["device_id"]:
+            battery_by_device.setdefault(item["device_id"], []).append(
+                item["entity_id"]
+            )
     for device in data["ha_devices"]:
-        device["battery_entity_id"] = battery_by_device.get(
-            device["ha_device_id"], ""
-        )
+        candidates = battery_by_device.get(device["ha_device_id"], [])
+        device["battery_entity_id"] = candidates[0] if len(candidates) == 1 else ""
+    entity_device_ids = {
+        item["entity_id"]: item["device_id"] for item in data["ha_entities"]
+    }
     for device in data["devices"]:
+        if not device.get("battery_entity_id"):
+            primary_device_id = entity_device_ids.get(
+                device.get("primary_entity_id", ""), device.get("ha_device_id", "")
+            )
+            candidates = battery_by_device.get(primary_device_id, [])
+            if len(candidates) == 1:
+                device["battery_entity_id"] = candidates[0]
         entity_id = device.get("battery_entity_id", "")
         state = hass.states.get(entity_id) if entity_id else None
         device["battery_level"] = _battery_level(state)
@@ -550,6 +561,23 @@ async def websocket_settings(
 
 
 @callback
+def _home_assistant_entities(hass: HomeAssistant) -> list[dict[str, str]]:
+    """Return searchable Home Assistant entities and their device relationship."""
+    entity_registry = er.async_get(hass)
+    result: list[dict[str, str]] = []
+    for state in hass.states.async_all():
+        registry_entry = entity_registry.async_get(state.entity_id)
+        result.append(
+            {
+                "entity_id": state.entity_id,
+                "name": str(state.attributes.get("friendly_name", state.entity_id)),
+                "device_id": registry_entry.device_id if registry_entry else "",
+            }
+        )
+    return sorted(result, key=lambda item: (item["name"].casefold(), item["entity_id"]))
+
+
+@callback
 def _battery_entities(hass: HomeAssistant) -> list[dict[str, Any]]:
     """Return Home Assistant sensors that expose a battery percentage."""
     entity_registry = er.async_get(hass)
@@ -623,6 +651,7 @@ def _home_assistant_devices(
             if entry.device_id == device.id
         ]
         entity_ids = sorted(entry.entity_id for entry in entities)
+        primary_entity_id = _primary_entity_id(hass, entities)
         area_id = device.area_id or (parent.area_id if parent else None) or next(
             (entry.area_id for entry in entities if entry.area_id), None
         )
@@ -662,6 +691,7 @@ def _home_assistant_devices(
                 "integration": ", ".join(domains),
                 "device_identifier": _first_identifier(device.identifiers),
                 "entity_name": common_entity_name(entity_ids),
+                "primary_entity_id": primary_entity_id,
                 "status": "unknown",
                 "ha_device_kind": "child" if is_child else "device",
                 "parent_ha_device_id": device.parent_device_id if is_child else "",
@@ -676,6 +706,26 @@ def _home_assistant_devices(
         )
 
     return sorted(result, key=lambda item: item["name"].casefold())
+
+
+def _primary_entity_id(hass: HomeAssistant, entities: list[Any]) -> str:
+    """Choose a useful default primary entity without selecting a battery sensor."""
+    if not entities:
+        return ""
+
+    def priority(entry: Any) -> tuple[bool, bool, bool, str]:
+        state = hass.states.get(entry.entity_id)
+        is_battery = bool(
+            state and str(state.attributes.get("device_class", "")) == "battery"
+        )
+        return (
+            is_battery,
+            entry.entity_category is not None,
+            entry.disabled_by is not None,
+            entry.entity_id,
+        )
+
+    return min(entities, key=priority).entity_id
 
 
 def _guess_protocol(domains: list[str]) -> str:

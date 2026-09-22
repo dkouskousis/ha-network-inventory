@@ -304,6 +304,22 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
                 device["id"], "22/09/2026"
             )
 
+    async def test_primary_entity_is_stored_as_complete_entity_id(self):
+        device = await self.manager.async_add(
+            device_payload(
+                "Window sensor",
+                "zigbee",
+                primary_entity_id="binary_sensor.window_contact",
+            )
+        )
+        self.assertEqual(
+            device["primary_entity_id"], "binary_sensor.window_contact"
+        )
+        with self.assertRaisesRegex(storage.InventoryError, "complete entity ID"):
+            await self.manager.async_update(
+                device["id"], {"primary_entity_id": "window_contact"}
+            )
+
     def test_common_entity_name(self):
         self.assertEqual(
             storage.common_entity_name(
@@ -328,6 +344,8 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("device.config_entry_id", source)
         self.assertIn("def _battery_entities", source)
         self.assertIn("websocket_battery_replaced", source)
+        self.assertIn("def _home_assistant_entities", source)
+        self.assertIn("def _primary_entity_id", source)
 
 
 if __name__ == "__main__":

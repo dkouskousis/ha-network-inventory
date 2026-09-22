@@ -29,6 +29,7 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - Saved table views plus bookmarkable URL filters for repeatable workflows
 - Home Assistant Device Registry support for main and child devices using the current config entry API
 - Battery entity assignment with live percentage, low-battery overview, replacement dates, and permanent replacement history
+- Searchable HA Primary entity selection with automatic, overridable battery-entity matching
 - Right-side device details panel with edit, print, UniFi, and delete actions
 - Search and protocol filters
 - Detailed filters for protocol, type, brand, area, and status
@@ -77,7 +78,7 @@ The importer recognises these spreadsheet columns:
 
 ```text
 Device Code, MAC / IEEE Address, Device IP, Device Type, Brand,
-Area, Device Name, Device ID, Entity Name, Comments, Protocol,
+Area, Device Name, Device ID, HA Primary Entity, Comments, Protocol,
 Network, VLAN, SSID, AP / Switch, Switch Port, Tags,
 Battery Entity, Last Battery Change
 ```

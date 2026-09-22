@@ -50,7 +50,9 @@ const TEXT = {
     replacementDate: "Replacement date", replacementNote: "Note", batteryDevices: "Battery devices", lowBattery: "Low battery",
     unavailable: "Unavailable", healthy: "Healthy", attention: "Attention", batteryOverview: "Battery overview",
     batteryHelp: "Devices with a Battery tag or an assigned battery entity.", replacementSaved: "Battery replacement recorded",
-    noBatteryDevices: "No battery-powered devices found.", never: "Never", noBatteryData: "No live data"
+    noBatteryDevices: "No battery-powered devices found.", never: "Never", noBatteryData: "No live data",
+    haPrimaryEntity: "HA Primary entity", selectPrimaryEntity: "Search and select the main Home Assistant entity",
+    relatedBattery: "Same device"
   },
   el: {
     title: "Καταγραφή Συσκευών", overview: "Επισκόπηση", devices: "Συσκευές", newestDevices: "Νεότερες συσκευές", discover: "Discover", homeAssistant: "Home Assistant",
@@ -103,7 +105,9 @@ const TEXT = {
     replacementDate: "Ημερομηνία αλλαγής", replacementNote: "Σημείωση", batteryDevices: "Συσκευές με μπαταρία", lowBattery: "Χαμηλή μπαταρία",
     unavailable: "Μη διαθέσιμη", healthy: "Καλή κατάσταση", attention: "Χρειάζεται προσοχή", batteryOverview: "Επισκόπηση μπαταριών",
     batteryHelp: "Συσκευές με tag Battery ή συνδεδεμένο entity μπαταρίας.", replacementSaved: "Η αλλαγή μπαταρίας καταγράφηκε",
-    noBatteryDevices: "Δεν βρέθηκαν συσκευές που λειτουργούν με μπαταρία.", never: "Ποτέ", noBatteryData: "Χωρίς live δεδομένα"
+    noBatteryDevices: "Δεν βρέθηκαν συσκευές που λειτουργούν με μπαταρία.", never: "Ποτέ", noBatteryData: "Χωρίς live δεδομένα",
+    haPrimaryEntity: "HA Primary entity", selectPrimaryEntity: "Αναζήτησε και επίλεξε το κύριο entity του Home Assistant",
+    relatedBattery: "Ίδια συσκευή"
   }
 };
 
@@ -574,7 +578,7 @@ class NetworkInventoryPanel extends HTMLElement {
         <section><h3>${this.t("networkDetails")}</h3>${row(this.t("address"), device.mac, true)}${row(this.t("ip"), device.ip_address, true)}${row(this.t("network"), device.network)}${row(this.t("vlan"), device.vlan)}${row(this.t("ssid"), device.ssid)}${row(this.t("connectedDevice"), device.connected_device)}${row(this.t("switchPort"), device.switch_port)}${mismatch ? `<button class="drawer-inline-action" data-sync-ip="${esc(device.id)}"><ha-icon icon="mdi:sync"></ha-icon>${this.t(device.ip_address ? "updateInventoryIp" : "addInventoryIp")} · ${esc(unifi.ip_address)}</button>` : ""}${duplicates.length ? `<p class="drawer-warning"><ha-icon icon="mdi:alert-circle-outline"></ha-icon>${this.t("sharedWith")}: ${esc(duplicates.map(item => `#${item.device_code} ${item.name}`).join(", "))}</p>` : ""}</section>
         ${batteryPowered ? `<section class="drawer-battery"><div class="drawer-section-title"><h3>${this.t("batteryPowered")}</h3>${this.batteryIndicator(device, true)}</div>${row(this.t("batteryEntity"), device.battery_entity_id || this.t("noBatteryEntity"), true)}${row(this.t("lastBatteryChange"), device.battery_last_replaced_at ? formatDateOnly(device.battery_last_replaced_at) : this.t("never"))}<button class="drawer-inline-action battery-action" data-battery-replace="${esc(device.id)}"><ha-icon icon="mdi:battery-sync-outline"></ha-icon>${this.t("recordReplacement")}</button>${batteryHistory.length ? `<div class="battery-history"><h4>${this.t("batteryHistory")}</h4>${batteryHistory.map(item => `<div><i></i><span><strong>${esc(formatDateOnly(item.replaced_at))}</strong>${item.note ? `<small>${esc(item.note)}</small>` : ""}</span></div>`).join("")}</div>` : ""}</section>` : ""}
         ${unifi ? `<section><h3>UniFi</h3>${row(this.t("type"), unifi.connection_type)}${row(this.t("firmware"), unifi.firmware_version)}${row(this.t("uplink"), [unifi.uplink_name, unifi.uplink_model, unifi.uplink_ip].filter(Boolean).join(" · "))}${row(this.t("connectedSince"), formatDate(unifi.connected_at))}${row(this.t("lastRefresh"), formatDate(this.data.integrations?.unifi?.last_refreshed))}</section>` : ""}
-        <section><h3>${this.t("identifier")}</h3>${row(this.t("identifier"), device.device_identifier, true)}${row(this.t("entityName"), device.entity_name, true)}${row(this.t("integration"), device.integration)}${device.ha_config_entry_id ? row("Config entry", device.ha_config_entry_id, true) : ""}${device.ha_config_subentry_id ? row("Config subentry", device.ha_config_subentry_id, true) : ""}${row(this.t("comments"), device.comments)}${row(this.t("createdAt"), formatDate(device.created_at))}${row(this.t("updatedAt"), formatDate(device.updated_at))}</section>
+        <section><h3>${this.t("identifier")}</h3>${row(this.t("identifier"), device.device_identifier, true)}${row(this.t("haPrimaryEntity"), device.primary_entity_id, true)}${row(this.t("integration"), device.integration)}${device.ha_config_entry_id ? row("Config entry", device.ha_config_entry_id, true) : ""}${device.ha_config_subentry_id ? row("Config subentry", device.ha_config_subentry_id, true) : ""}${row(this.t("comments"), device.comments)}${row(this.t("createdAt"), formatDate(device.created_at))}${row(this.t("updatedAt"), formatDate(device.updated_at))}</section>
       </div>
       <div class="drawer-actions">${unifi ? `<a class="secondary drawer-icon-action" href="https://unifi.ui.com" target="_blank" rel="noopener noreferrer" title="${this.t("openUnifi")}"><ha-icon icon="mdi:open-in-new"></ha-icon></a>` : ""}${this.data.integrations?.niimbot?.connected ? `<button class="secondary" data-print-label="${esc(device.id)}"><ha-icon icon="mdi:printer-outline"></ha-icon>${this.t("printLabel")}</button>` : ""}<button class="primary" data-edit="${esc(device.id)}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${this.t("edit")}</button><button class="secondary danger-text drawer-icon-action" data-delete="${esc(device.id)}" title="${this.t("delete")}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div>`;
   }
@@ -650,7 +654,7 @@ class NetworkInventoryPanel extends HTMLElement {
   }
 
   fieldLabel(fieldName) {
-    const labels = { name:"name", device_type:"type", brand:"brand", model:"model", area:"area", mac:"address", ip_address:"ip", protocol:"protocol", device_identifier:"identifier", entity_name:"entityName", comments:"comments", status:"status", battery_entity_id:"batteryEntity", battery_last_replaced_at:"lastBatteryChange", battery_history:"batteryHistory", network:"network", vlan:"vlan", ssid:"ssid", connected_device:"connectedDevice", switch_port:"switchPort", tags:"tags" };
+    const labels = { name:"name", device_type:"type", brand:"brand", model:"model", area:"area", mac:"address", ip_address:"ip", protocol:"protocol", device_identifier:"identifier", primary_entity_id:"haPrimaryEntity", comments:"comments", status:"status", battery_entity_id:"batteryEntity", battery_last_replaced_at:"lastBatteryChange", battery_history:"batteryHistory", network:"network", vlan:"vlan", ssid:"ssid", connected_device:"connectedDevice", switch_port:"switchPort", tags:"tags" };
     return this.t(labels[fieldName] || fieldName);
   }
 
@@ -968,7 +972,7 @@ class NetworkInventoryPanel extends HTMLElement {
       area: "",
       integration: "unifi",
       device_identifier: `unifi:${item.id}`,
-      entity_name: "",
+      primary_entity_id: "",
       comments: item.uplink_name ? `${this.t("uplink")}: ${item.uplink_name}` : "",
       unifi_id: item.id,
       unifi_kind: item.kind,
@@ -1202,15 +1206,23 @@ class NetworkInventoryPanel extends HTMLElement {
     const isEdit = Boolean(device && !isImport);
     const isChildDevice = device?.ha_device_kind === "child";
     const ipRequired = !isChildDevice && ["wifi", "ethernet"].includes(device?.protocol || "wifi");
-    const batteryEntities = [...(this.data.battery_entities || [])].sort((a, b) => {
-      const aRelated = a.device_id && a.device_id === device?.ha_device_id ? 1 : 0;
-      const bRelated = b.device_id && b.device_id === device?.ha_device_id ? 1 : 0;
-      return bRelated - aRelated || a.name.localeCompare(b.name);
-    });
-    const missingBatteryEntity = device?.battery_entity_id && !batteryEntities.some(entity => entity.entity_id === device.battery_entity_id)
-      ? `<option value="${esc(device.battery_entity_id)}" selected>${esc(device.battery_entity_id)} · ${this.t("unavailable")}</option>`
-      : "";
-    const batteryOptions = missingBatteryEntity + batteryEntities.map(entity => `<option value="${esc(entity.entity_id)}" ${device?.battery_entity_id === entity.entity_id ? "selected" : ""}>${entity.device_id === device?.ha_device_id ? "★ " : ""}${esc(entity.name)} · ${esc(entity.entity_id)}${entity.level !== null ? ` · ${esc(entity.level)}%` : ""}</option>`).join("");
+    const haEntities = this.data.ha_entities || [];
+    const primaryEntityOptions = haEntities.map(entity => `<option value="${esc(entity.entity_id)}">${esc(entity.name)} · ${esc(entity.entity_id)}</option>`).join("");
+    const selectedPrimary = haEntities.find(entity => entity.entity_id === device?.primary_entity_id);
+    const relatedDeviceId = selectedPrimary?.device_id || device?.ha_device_id || "";
+    const relatedBatteryEntities = (this.data.battery_entities || []).filter(entity => entity.device_id && entity.device_id === relatedDeviceId);
+    const initialBatteryEntity = device?.battery_entity_id || (relatedBatteryEntities.length === 1 ? relatedBatteryEntities[0].entity_id : "");
+    const batteryOptionsFor = (selected, relatedId) => {
+      const batteryEntities = [...(this.data.battery_entities || [])].sort((a, b) => {
+        const aRelated = a.device_id && a.device_id === relatedId ? 1 : 0;
+        const bRelated = b.device_id && b.device_id === relatedId ? 1 : 0;
+        return bRelated - aRelated || a.name.localeCompare(b.name);
+      });
+      const missing = selected && !batteryEntities.some(entity => entity.entity_id === selected)
+        ? `<option value="${esc(selected)}" selected>${esc(selected)} · ${this.t("unavailable")}</option>`
+        : "";
+      return `<option value="">${this.t("noBatteryEntity")}</option>${missing}${batteryEntities.map(entity => `<option value="${esc(entity.entity_id)}" ${selected === entity.entity_id ? "selected" : ""}>${entity.device_id && entity.device_id === relatedId ? `★ ${this.t("relatedBattery")} · ` : ""}${esc(entity.name)} · ${esc(entity.entity_id)}${entity.level !== null ? ` · ${esc(entity.level)}%` : ""}</option>`).join("")}`;
+    };
     const modal = this.shadowRoot.querySelector("#modal");
     modal.innerHTML = `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><div><h2>${isEdit ? this.t("edit") : this.t("addDevice")}</h2><p>${isEdit ? `${this.t("code")}: ${device.device_code}` : this.t("autoId")}</p></div><button type="button" data-close><ha-icon icon="mdi:close"></ha-icon></button></div>
       <form id="device-form"><div class="form-grid">
@@ -1221,10 +1233,10 @@ class NetworkInventoryPanel extends HTMLElement {
         <label>${this.t("area")}<input name="area" list="area-options" value="${esc(device?.area || "")}" required><datalist id="area-options">${areaOptions}</datalist></label>
         <label>${this.t("protocol")}<select name="protocol" required>${protocols}</select><small>${isEdit ? this.t("stableId") : ""}</small></label>
         ${field("mac", this.t("address"), device?.mac, !isChildDevice)}${field("ip_address", this.t("ip"), device?.ip_address, ipRequired)}
-        ${field("device_identifier", this.t("identifier"), device?.device_identifier)}${field("entity_name", this.t("entityName"), device?.entity_name)}
+        ${field("device_identifier", this.t("identifier"), device?.device_identifier)}<label>${this.t("haPrimaryEntity")}<input name="primary_entity_id" list="ha-primary-entities" value="${esc(device?.primary_entity_id || "")}" placeholder="${this.t("selectPrimaryEntity")}"><datalist id="ha-primary-entities">${primaryEntityOptions}</datalist></label>
         ${field("integration", this.t("integration"), device?.integration)}
         <label>${this.t("status")}<select name="status"><option value="unknown">${this.t("unknown")}</option><option value="online" ${device?.status === "online" ? "selected" : ""}>Online</option><option value="offline" ${device?.status === "offline" ? "selected" : ""}>Offline</option></select></label>
-        <fieldset class="full battery-fields"><legend>${this.t("batteryPowered")}</legend><label>${this.t("batteryEntity")}<select name="battery_entity_id"><option value="">${this.t("noBatteryEntity")}</option>${batteryOptions}</select></label><label>${this.t("lastBatteryChange")}<input name="battery_last_replaced_at" type="date" value="${esc(device?.battery_last_replaced_at || "")}"></label></fieldset>
+        <fieldset class="full battery-fields"><legend>${this.t("batteryPowered")}</legend><label>${this.t("batteryEntity")}<select name="battery_entity_id">${batteryOptionsFor(initialBatteryEntity, relatedDeviceId)}</select></label><label>${this.t("lastBatteryChange")}<input name="battery_last_replaced_at" type="date" value="${esc(device?.battery_last_replaced_at || "")}"></label></fieldset>
         <fieldset class="full network-fields"><legend>${this.t("networkDetails")}</legend>${field("network", this.t("network"), device?.network)}${field("vlan", this.t("vlan"), device?.vlan)}${field("ssid", this.t("ssid"), device?.ssid)}${field("connected_device", this.t("connectedDevice"), device?.connected_device)}${field("switch_port", this.t("switchPort"), device?.switch_port)}</fieldset>
         <label class="full">${this.t("tags")}<details class="tag-picker"><summary>${selectedTags.size ? esc([...selectedTags].join(", ")) : this.t("tags")}</summary><div>${tagOptions || `<small>${this.t("tagSettings")}</small>`}</div></details></label>
         <label class="full">${this.t("comments")}<textarea name="comments" rows="3">${esc(device?.comments || "")}</textarea></label>
@@ -1233,6 +1245,16 @@ class NetworkInventoryPanel extends HTMLElement {
     const protocolSelect = modal.querySelector("[name='protocol']");
     const ipInput = modal.querySelector("[name='ip_address']");
     protocolSelect.addEventListener("change", () => { ipInput.required = !isChildDevice && ["wifi", "ethernet"].includes(protocolSelect.value); });
+    const primaryInput = modal.querySelector("[name='primary_entity_id']");
+    const batterySelect = modal.querySelector("[name='battery_entity_id']");
+    primaryInput.addEventListener("change", () => {
+      const primary = haEntities.find(entity => entity.entity_id === primaryInput.value.trim());
+      const relatedId = primary?.device_id || "";
+      const relatedBatteries = (this.data.battery_entities || []).filter(entity => entity.device_id && entity.device_id === relatedId);
+      const automaticBattery = relatedBatteries.length === 1 ? relatedBatteries[0].entity_id : "";
+      batterySelect.innerHTML = batteryOptionsFor(automaticBattery, relatedId);
+      batterySelect.value = automaticBattery;
+    });
     modal.querySelector("[data-clear-id]")?.addEventListener("click", () => {
       modal.querySelector("[name='device_code']").value = "";
       modal.querySelector("[data-id-help]").textContent = this.t("newIdHelp");
@@ -1245,6 +1267,8 @@ class NetworkInventoryPanel extends HTMLElement {
     const form = event.currentTarget;
     const payload = Object.fromEntries(new FormData(form).entries());
     payload.tags = [...form.querySelectorAll("[name='tags']:checked")].map(input => input.value);
+    const primaryEntity = (this.data.ha_entities || []).find(entity => entity.entity_id === payload.primary_entity_id);
+    if (primaryEntity?.device_id) payload.ha_device_id = primaryEntity.device_id;
     if (!payload.name.trim()) return this.toast(this.t("requiredName"), true);
     this.setBusy(form, true);
     try {
@@ -1276,8 +1300,8 @@ class NetworkInventoryPanel extends HTMLElement {
   }
 
   exportCsv() {
-    const headers = ["Device Code","MAC / IEEE Address","Device IP","Device Type","Brand","Area","Device Name","Device ID","Entity Name","Comments","Protocol","Network","VLAN","SSID","AP / Switch","Switch Port","Tags","Battery Entity","Last Battery Change"];
-    const keys = ["device_code","mac","ip_address","device_type","brand","area","name","device_identifier","entity_name","comments","protocol","network","vlan","ssid","connected_device","switch_port","tags","battery_entity_id","battery_last_replaced_at"];
+    const headers = ["Device Code","MAC / IEEE Address","Device IP","Device Type","Brand","Area","Device Name","Device ID","HA Primary Entity","Comments","Protocol","Network","VLAN","SSID","AP / Switch","Switch Port","Tags","Battery Entity","Last Battery Change"];
+    const keys = ["device_code","mac","ip_address","device_type","brand","area","name","device_identifier","primary_entity_id","comments","protocol","network","vlan","ssid","connected_device","switch_port","tags","battery_entity_id","battery_last_replaced_at"];
     const lines = [headers, ...this.data.devices.sort((a,b) => a.device_code-b.device_code).map(d => keys.map(k => Array.isArray(d[k]) ? d[k].join(";") : (d[k] ?? "")))];
     const csv = lines.map(row => row.map(csvCell).join(",")).join("\r\n");
     const link = document.createElement("a");
@@ -1395,7 +1419,7 @@ function csvToDevices(text) {
     device_code: find("devicecode", "code"), mac: find("macieeeaddress", "macaddress", "mac", "ieee"),
     ip_address: find("deviceip", "ipaddress", "ip"), device_type: find("devicetype", "type"), brand: find("brand", "manufacturer"),
     area: find("area", "room"), name: find("devicename", "name"), device_identifier: find("deviceid", "identifier"),
-    entity_name: find("entityname"),
+    primary_entity_id: find("haprimaryentity", "primaryentity", "primaryentityid"),
     comments: find("comments", "notes"), protocol: find("protocol", "connection"),
     network: find("network", "networkname"), vlan: find("vlan", "vlanid"), ssid: find("ssid"),
     connected_device: find("apswitch", "connecteddevice", "uplink"), switch_port: find("switchport", "port"), tags: find("tags"),

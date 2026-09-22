@@ -117,6 +117,7 @@ class InventoryStore:
             device.setdefault("battery_entity_id", "")
             device.setdefault("battery_last_replaced_at", "")
             device.setdefault("battery_history", [])
+            device.setdefault("primary_entity_id", "")
         if migrated:
             await self._store.async_save(self.data)
 
@@ -622,6 +623,7 @@ class InventoryStore:
             "ha_config_subentry_id",
             "battery_entity_id",
             "battery_last_replaced_at",
+            "primary_entity_id",
             "integration",
             "unifi_id",
             "unifi_kind",
@@ -679,6 +681,10 @@ class InventoryStore:
         )
         if cleaned["battery_last_replaced_at"]:
             self._validate_battery_date(cleaned["battery_last_replaced_at"])
+        if cleaned["primary_entity_id"]:
+            domain, separator, object_id = cleaned["primary_entity_id"].partition(".")
+            if not separator or not domain or not object_id:
+                raise InventoryError("HA Primary entity must be a complete entity ID")
         return cleaned
 
     def _append_initial_battery_history(self, device: dict[str, Any]) -> None:
