@@ -47,3 +47,23 @@ def firmware_update_details(entry: Any, state: Any) -> dict[str, Any]:
             state and state.state not in {"unknown", "unavailable"}
         ),
     }
+
+
+def shelly_integration_status(
+    config_entries: Iterable[Any], updates: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
+    """Summarize the native Home Assistant Shelly integration."""
+    entries = list(config_entries)
+    firmware_entities = list(updates.values())
+    return {
+        "native": True,
+        "configured": bool(entries),
+        "device_count": len(entries),
+        "firmware_entity_count": len(firmware_entities),
+        "active_firmware_entity_count": sum(
+            not item["firmware_update_disabled"] for item in firmware_entities
+        ),
+        "updates_available": sum(
+            item["firmware_update_available"] for item in firmware_entities
+        ),
+    }

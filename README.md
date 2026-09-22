@@ -32,6 +32,7 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - Battery entity assignment with live percentage, low-battery overview, replacement dates, and permanent replacement history
 - Searchable HA Primary entity selection with automatic, overridable battery-entity matching
 - Automatic Shelly stable-firmware entity matching with live installed/latest versions, update progress, and confirmed one-click OTA installation
+- Native Shelly integration status card with detected-device, firmware-entity, and available-update counts plus direct Home Assistant setup access
 - Right-side device details panel with edit, print, UniFi, and delete actions
 - Device-count navigation badge and HACS update availability beside the installed version
 - Search and protocol filters

@@ -17,7 +17,11 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import label_registry as lr
 
 from .const import DOMAIN, VERSION
-from .firmware import firmware_update_details, select_shelly_firmware_entries
+from .firmware import (
+    firmware_update_details,
+    select_shelly_firmware_entries,
+    shelly_integration_status,
+)
 from .storage import InventoryError, InventoryStore, common_entity_name
 from .unifi import UniFiCloudManager, UniFiError, match_unifi_items
 
@@ -102,16 +106,19 @@ async def websocket_list(
     if await _manager(hass).async_sync_unifi(unifi_matches):
         data = await _manager(hass).async_snapshot()
         unifi_matches, unifi_items = match_unifi_items(data["devices"], _unifi(hass).items)
+    firmware_updates = _shelly_firmware_updates(hass)
     data["integrations"] = {
         "unifi": _unifi(hass).status(),
         "niimbot": _niimbot_status(hass, data.get("niimbot", {})),
+        "shelly": shelly_integration_status(
+            hass.config_entries.async_entries("shelly"), firmware_updates
+        ),
     }
     data["unifi_items"] = unifi_items
     data["unifi_matches"] = unifi_matches
     data["ha_devices"] = _home_assistant_devices(hass, data["devices"])
     data["ha_entities"] = _home_assistant_entities(hass)
     data["battery_entities"] = _battery_entities(hass)
-    firmware_updates = _shelly_firmware_updates(hass)
     battery_by_device: dict[str, list[str]] = {}
     for item in data["battery_entities"]:
         if item["device_id"]:

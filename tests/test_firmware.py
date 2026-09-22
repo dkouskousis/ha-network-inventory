@@ -85,6 +85,25 @@ class FirmwareTests(unittest.TestCase):
         self.assertTrue(details["firmware_update_in_progress"])
         self.assertEqual(details["firmware_update_percentage"], 42)
 
+    def test_summarizes_native_shelly_integration(self):
+        updates = {
+            "device-1": {
+                "firmware_update_disabled": False,
+                "firmware_update_available": True,
+            },
+            "device-2": {
+                "firmware_update_disabled": True,
+                "firmware_update_available": False,
+            },
+        }
+        status = firmware.shelly_integration_status([object(), object()], updates)
+        self.assertTrue(status["native"])
+        self.assertTrue(status["configured"])
+        self.assertEqual(status["device_count"], 2)
+        self.assertEqual(status["firmware_entity_count"], 2)
+        self.assertEqual(status["active_firmware_entity_count"], 1)
+        self.assertEqual(status["updates_available"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

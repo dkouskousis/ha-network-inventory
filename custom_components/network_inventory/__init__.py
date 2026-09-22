@@ -12,7 +12,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import label_registry as lr
 
-from .const import DOMAIN, NAME, PANEL_URL
+from .const import DOMAIN, NAME, PANEL_URL, VERSION
 from .storage import InventoryStore
 from .unifi import UniFiCloudManager
 from .websocket import async_register_commands, async_sync_labels_from_home_assistant
@@ -61,7 +61,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             webcomponent_name="network-inventory-panel",
             sidebar_title=NAME,
             sidebar_icon="mdi:lan",
-            module_url=f"{PANEL_URL}/network-inventory-panel.js?v=0.14.0",
+            module_url=f"{PANEL_URL}/network-inventory-panel.js?v={VERSION}",
             require_admin=True,
             handle_safe_area=True,
         )
