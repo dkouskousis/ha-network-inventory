@@ -69,7 +69,14 @@ const TEXT = {
     addShelly: "Add Shelly to Home Assistant", openShelly: "Open Shelly in Home Assistant", shellyDevices: "Shelly devices",
     firmwareEntities: "Firmware entities", availableUpdates: "Available updates",
     noFirmwareEntities: "No stable firmware update entities were found for the configured Shelly devices.",
-    disabledFirmwareEntities: "Firmware entities were found, but they are disabled. Enable them in Home Assistant."
+    disabledFirmwareEntities: "Firmware entities were found, but they are disabled. Enable them in Home Assistant.",
+    customFields: "Custom fields", customFieldsHelp: "Create additional fields that appear on every device.", customFieldName: "Field name",
+    customFieldType: "Type", addCustomField: "Add field", textType: "Text", numberType: "Number", dateType: "Date", urlType: "URL", booleanType: "Checkbox",
+    adminUrl: "Admin URL", openAdmin: "Open device interface", links: "Links", addLink: "Add link", linkName: "Link name", linkUrl: "URL",
+    attachments: "Attachments", addAttachments: "Add attachments", noAttachments: "No attachments", attachmentAdded: "Attachment added",
+    attachmentDeleted: "Attachment deleted", deleteAttachment: "Delete attachment", confirmDeleteAttachment: "Delete this attachment?", attachmentTooLarge: "Each attachment must be up to 10 MB.",
+    fullBackup: "Full ZIP backup", fullBackupHelp: "Includes inventory data and every attachment. Internal restore points contain data only.", exportZip: "Download full ZIP", restoreBackupFile: "Restore JSON or ZIP",
+    dataOnly: "Data only", yes: "Yes", no: "No"
   },
   el: {
     title: "Καταγραφή Συσκευών", overview: "Επισκόπηση", devices: "Συσκευές", newestDevices: "Νεότερες συσκευές", discover: "Discover", homeAssistant: "Home Assistant",
@@ -141,7 +148,14 @@ const TEXT = {
     addShelly: "Προσθήκη Shelly στο Home Assistant", openShelly: "Άνοιγμα Shelly στο Home Assistant", shellyDevices: "Συσκευές Shelly",
     firmwareEntities: "Firmware entities", availableUpdates: "Διαθέσιμες ενημερώσεις",
     noFirmwareEntities: "Δεν βρέθηκαν stable firmware update entities για τις ρυθμισμένες συσκευές Shelly.",
-    disabledFirmwareEntities: "Βρέθηκαν firmware entities, αλλά είναι απενεργοποιημένα. Ενεργοποίησέ τα στο Home Assistant."
+    disabledFirmwareEntities: "Βρέθηκαν firmware entities, αλλά είναι απενεργοποιημένα. Ενεργοποίησέ τα στο Home Assistant.",
+    customFields: "Custom fields", customFieldsHelp: "Δημιούργησε πρόσθετα πεδία που εμφανίζονται σε κάθε συσκευή.", customFieldName: "Όνομα πεδίου",
+    customFieldType: "Τύπος", addCustomField: "Προσθήκη πεδίου", textType: "Κείμενο", numberType: "Αριθμός", dateType: "Ημερομηνία", urlType: "URL", booleanType: "Checkbox",
+    adminUrl: "Admin URL", openAdmin: "Άνοιγμα διαχείρισης συσκευής", links: "Σύνδεσμοι", addLink: "Προσθήκη συνδέσμου", linkName: "Όνομα συνδέσμου", linkUrl: "URL",
+    attachments: "Attachments", addAttachments: "Προσθήκη αρχείων", noAttachments: "Δεν υπάρχουν αρχεία", attachmentAdded: "Το αρχείο προστέθηκε",
+    attachmentDeleted: "Το αρχείο διαγράφηκε", deleteAttachment: "Διαγραφή αρχείου", confirmDeleteAttachment: "Να διαγραφεί αυτό το αρχείο;", attachmentTooLarge: "Κάθε αρχείο μπορεί να είναι έως 10 MB.",
+    fullBackup: "Πλήρες ZIP backup", fullBackupHelp: "Περιλαμβάνει τα δεδομένα του inventory και όλα τα attachments. Τα εσωτερικά restore points περιέχουν μόνο δεδομένα.", exportZip: "Λήψη πλήρους ZIP", restoreBackupFile: "Επαναφορά JSON ή ZIP",
+    dataOnly: "Μόνο δεδομένα", yes: "Ναι", no: "Όχι"
   }
 };
 
@@ -678,10 +692,19 @@ class NetworkInventoryPanel extends HTMLElement {
     const batteryPowered = Boolean(device.battery_entity_id) || (device.labels || []).some(label => label.toLowerCase() === "battery");
     const batteryHistory = [...(device.battery_history || [])].reverse();
     const firmware = this.firmwareInfo(device);
+    const customRows = (this.data.custom_fields || []).filter(definition => Object.prototype.hasOwnProperty.call(device.custom_values || {}, definition.id)).map(definition => {
+      const value = device.custom_values[definition.id];
+      return [definition.label, definition.type === "boolean" ? this.t(value ? "yes" : "no") : value];
+    });
+    const links = device.links || [];
+    const attachments = device.attachments || [];
     const row = (label, value, mono = false) => `<div><span>${label}</span><strong class="${mono ? "mono" : ""}">${esc(value || "—")}</strong></div>`;
     return `<div class="drawer-head"><div><span class="code">#${esc(device.device_code)}</span><h2>${esc(device.name)}</h2><div class="drawer-badges">${this.statusBadge(device.status)}<span class="pill" style="--pill:${safeColor(protocol.color)}">${esc(protocol.label)}</span>${unifi ? `<span class="unifi-badge"><ha-icon icon="mdi:access-point-network"></ha-icon>UniFi</span>` : ""}</div></div><button data-close-drawer title="${this.t("cancel")}"><ha-icon icon="mdi:close"></ha-icon></button></div>
       <div class="drawer-body">
         <section><h3>${this.t("details")}</h3>${row(this.t("type"), device.device_type)}${row(this.t("brand"), device.brand)}${row(this.t("model"), device.model)}${row(this.t("area"), device.area)}${device.ha_device_kind ? row(this.t("homeAssistant"), this.t(device.ha_device_kind === "child" ? "childDevice" : "mainDevice")) : ""}${device.parent_device_name ? row(this.t("parentDevice"), device.parent_device_name) : ""}${this.labelChips(device.labels)}</section>
+        ${customRows.length ? `<section><h3>${this.t("customFields")}</h3>${customRows.map(([label,value]) => row(label, value)).join("")}</section>` : ""}
+        ${device.admin_url || links.length ? `<section class="drawer-resources"><h3>${this.t("links")}</h3>${device.admin_url ? `<a class="resource-link admin-link" href="${esc(device.admin_url)}" target="_blank" rel="noopener noreferrer"><ha-icon icon="mdi:cog-outline"></ha-icon><span><strong>${this.t("openAdmin")}</strong><small>${esc(device.admin_url)}</small></span><ha-icon icon="mdi:open-in-new"></ha-icon></a>` : ""}${links.map(link => `<a class="resource-link" href="${esc(link.url)}" target="_blank" rel="noopener noreferrer"><ha-icon icon="mdi:link-variant"></ha-icon><span><strong>${esc(link.label)}</strong><small>${esc(link.url)}</small></span><ha-icon icon="mdi:open-in-new"></ha-icon></a>`).join("")}</section>` : ""}
+        <section class="drawer-attachments"><div class="drawer-section-title"><h3>${this.t("attachments")}</h3><button class="secondary compact" data-add-attachments="${esc(device.id)}"><ha-icon icon="mdi:paperclip-plus"></ha-icon>${this.t("addAttachments")}</button><input type="file" data-attachment-input multiple hidden></div>${attachments.length ? `<div class="attachment-list">${attachments.map(attachment => `<div class="attachment-item"><ha-icon icon="${attachment.content_type?.startsWith("image/") ? "mdi:file-image-outline" : attachment.content_type === "application/pdf" ? "mdi:file-pdf-box" : "mdi:file-outline"}"></ha-icon><button data-download-attachment="${esc(attachment.id)}"><strong>${esc(attachment.name)}</strong><small>${formatFileSize(attachment.size)}</small></button><button class="danger-icon" data-delete-attachment="${esc(attachment.id)}" title="${this.t("deleteAttachment")}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div>`).join("")}</div>` : `<p class="muted attachment-empty">${this.t("noAttachments")}</p>`}</section>
         <section><h3>${this.t("networkDetails")}</h3>${row(this.t("address"), device.mac, true)}${row(this.t("ip"), device.ip_address, true)}${row(this.t("network"), device.network)}${row(this.t("vlan"), device.vlan)}${row(this.t("ssid"), device.ssid)}${row(this.t("connectedDevice"), device.connected_device)}${row(this.t("switchPort"), device.switch_port)}${mismatch ? `<button class="drawer-inline-action" data-sync-ip="${esc(device.id)}"><ha-icon icon="mdi:sync"></ha-icon>${this.t(device.ip_address ? "updateInventoryIp" : "addInventoryIp")} · ${esc(unifi.ip_address)}</button>` : ""}${duplicates.length ? `<p class="drawer-warning"><ha-icon icon="mdi:alert-circle-outline"></ha-icon>${this.t("sharedWith")}: ${esc(duplicates.map(item => `#${item.device_code} ${item.name}`).join(", "))}</p>` : ""}</section>
         ${batteryPowered ? `<section class="drawer-battery"><div class="drawer-section-title"><h3>${this.t("batteryPowered")}</h3>${this.batteryIndicator(device, true)}</div>${row(this.t("batteryEntity"), device.battery_entity_id || this.t("noBatteryEntity"), true)}${row(this.t("lastBatteryChange"), device.battery_last_replaced_at ? this.formatDateOnly(device.battery_last_replaced_at) : this.t("never"))}<button class="drawer-inline-action battery-action" data-battery-replace="${esc(device.id)}"><ha-icon icon="mdi:battery-sync-outline"></ha-icon>${this.t("recordReplacement")}</button>${batteryHistory.length ? `<div class="battery-history"><h4>${this.t("batteryHistory")}</h4>${batteryHistory.map(item => `<div><i></i><span><strong>${esc(this.formatDateOnly(item.replaced_at))}</strong>${item.note ? `<small>${esc(item.note)}</small>` : ""}</span></div>`).join("")}</div>` : ""}</section>` : ""}
         ${firmware.entityId ? `<section class="drawer-firmware"><div class="drawer-section-title"><h3>${this.t("firmwareStatus")}</h3>${this.firmwareIndicator(device, true)}</div>${row(this.t("installedVersion"), firmware.installedVersion)}${row(this.t("latestVersion"), firmware.latestVersion)}${row(this.t("firmwareEntity"), firmware.entityId, true)}${firmware.inProgress ? `<div class="firmware-progress"><span style="width:${firmware.progress ?? 15}%"></span></div>` : ""}${firmware.disabled ? `<p class="firmware-note warning"><ha-icon icon="mdi:information-outline"></ha-icon>${this.t("firmwareDisabled")}</p><a class="drawer-inline-action firmware-ha-link" href="/config/entities"><ha-icon icon="mdi:home-assistant"></ha-icon>${this.t("homeAssistant")}</a>` : !firmware.available ? `<p class="firmware-note warning"><ha-icon icon="mdi:cloud-off-outline"></ha-icon>${this.t("firmwareUnavailable")}</p>` : firmware.updateAvailable && !firmware.inProgress ? `<button class="drawer-inline-action firmware-action" data-firmware-update="${esc(device.id)}"><ha-icon icon="mdi:update"></ha-icon>${this.t("installFirmware")}</button>` : ""}${firmware.releaseUrl ? `<a class="firmware-release-link" href="${esc(firmware.releaseUrl)}" target="_blank" rel="noopener noreferrer"><ha-icon icon="mdi:open-in-new"></ha-icon>${this.t("releaseNotes")}</a>` : ""}</section>` : ""}
@@ -764,14 +787,14 @@ class NetworkInventoryPanel extends HTMLElement {
 
   renderLogs() {
     const logs = [...(this.data.logs || [])].reverse();
-    const actionLabel = action => ({ add: this.t("addDevice"), update: this.t("edit"), bulk_update: this.t("bulkEdit"), battery_replaced: this.t("recordReplacement"), delete: this.t("delete"), import: this.t("import"), restore: this.t("restore"), settings: this.t("settings") }[action] || action);
+    const actionLabel = action => ({ add: this.t("addDevice"), update: this.t("edit"), bulk_update: this.t("bulkEdit"), battery_replaced: this.t("recordReplacement"), attachment_add: this.t("attachmentAdded"), attachment_delete: this.t("attachmentDeleted"), delete: this.t("delete"), import: this.t("import"), restore: this.t("restore"), settings: this.t("settings") }[action] || action);
     return `<section class="section-head"><div><h2>${this.t("logs")}</h2><p>${logs.length} ${this.t("logAction").toLowerCase()}</p></div></section>
       <section class="log-list">${logs.map(log => `<article class="card log-entry"><div class="log-icon ${esc(log.action)}"><ha-icon icon="${log.action === "delete" ? "mdi:delete-outline" : log.action === "restore" ? "mdi:backup-restore" : "mdi:pencil-outline"}"></ha-icon></div><div class="grow"><div class="log-title"><strong>${esc(actionLabel(log.action))}</strong>${log.device_name ? `<span>#${esc(log.device_code)} · ${esc(log.device_name)}</span>` : ""}</div><small>${esc(this.formatDate(log.timestamp))} · ${esc(log.source || "manual")}</small>${log.details ? `<p>${esc(log.details)}</p>` : ""}<div class="change-list">${(log.changes || []).map(change => `<div><b>${esc(this.fieldLabel(change.field))}</b><span>${esc(displayValue(change.old))}</span><ha-icon icon="mdi:arrow-right"></ha-icon><span>${esc(displayValue(change.new))}</span></div>`).join("")}</div></div></article>`).join("")}</section>
       ${logs.length ? "" : `<div class="empty standalone"><ha-icon icon="mdi:history"></ha-icon><p>${this.t("noLogs")}</p></div>`}`;
   }
 
   fieldLabel(fieldName) {
-    const labels = { name:"name", device_type:"type", brand:"brand", model:"model", area:"area", mac:"address", ip_address:"ip", protocol:"protocol", device_identifier:"identifier", primary_entity_id:"haPrimaryEntity", comments:"comments", status:"status", battery_entity_id:"batteryEntity", battery_last_replaced_at:"lastBatteryChange", battery_history:"batteryHistory", network:"network", vlan:"vlan", ssid:"ssid", connected_device:"connectedDevice", switch_port:"switchPort", labels:"labels" };
+    const labels = { name:"name", device_type:"type", brand:"brand", model:"model", area:"area", mac:"address", ip_address:"ip", protocol:"protocol", device_identifier:"identifier", primary_entity_id:"haPrimaryEntity", admin_url:"adminUrl", links:"links", custom_values:"customFields", attachments:"attachments", comments:"comments", status:"status", battery_entity_id:"batteryEntity", battery_last_replaced_at:"lastBatteryChange", battery_history:"batteryHistory", network:"network", vlan:"vlan", ssid:"ssid", connected_device:"connectedDevice", switch_port:"switchPort", labels:"labels" };
     return this.t(labels[fieldName] || fieldName);
   }
 
@@ -802,8 +825,14 @@ class NetworkInventoryPanel extends HTMLElement {
       <section class="card settings-card"><h2>${this.t("deviceTypes")}</h2><textarea id="device-types" rows="12">${esc(this.data.device_types.join("\n"))}</textarea></section>
       <section class="card settings-card"><h2>${this.t("brandSettings")}</h2><textarea id="brands" rows="8">${esc(this.data.brands.join("\n"))}</textarea></section>
       <section class="card settings-card"><h2>${this.t("labelSettings")}</h2><p class="muted settings-help">${this.t("labelSettingsHelp")}</p><textarea id="labels" rows="8">${esc((this.data.labels || []).join("\n"))}</textarea></section>
+      <section class="card settings-card"><div class="section-head"><div><h2>${this.t("customFields")}</h2><p>${this.t("customFieldsHelp")}</p></div><button type="button" class="secondary" data-action="add-custom-field"><ha-icon icon="mdi:plus"></ha-icon>${this.t("addCustomField")}</button></div><div id="custom-field-rows" class="custom-field-settings">${(this.data.custom_fields || []).map(field => this.customFieldRow(field)).join("")}</div></section>
       <div class="form-actions"><button type="submit" class="primary"><ha-icon icon="mdi:content-save-outline"></ha-icon>${this.t("saveSettings")}</button></div>
     </form>`;
+  }
+
+  customFieldRow(field = { id: "", label: "", type: "text" }) {
+    const types = [["text","textType"],["number","numberType"],["date","dateType"],["url","urlType"],["boolean","booleanType"]];
+    return `<div class="custom-field-setting"><input type="hidden" name="id" value="${esc(field.id || "")}"><label>${this.t("customFieldName")}<input name="label" value="${esc(field.label || "")}" required maxlength="80"></label><label>${this.t("customFieldType")}<select name="type">${types.map(([value,label]) => `<option value="${value}" ${field.type === value ? "selected" : ""}>${this.t(label)}</option>`).join("")}</select></label><button type="button" class="danger-icon" data-remove-custom-field title="${this.t("delete")}"><ha-icon icon="mdi:close"></ha-icon></button></div>`;
   }
 
   renderRangeSettings() {
@@ -817,7 +846,7 @@ class NetworkInventoryPanel extends HTMLElement {
   }
 
   renderBackupSettings() {
-    return `<section class="card settings-card backup-card"><div class="section-head"><div><h2>${this.t("backups")}</h2><p>${this.t("automaticBackups")}</p></div><div class="backup-actions"><input id="json-file" type="file" accept="application/json,.json" hidden><button class="secondary" data-action="restore-json"><ha-icon icon="mdi:backup-restore"></ha-icon>${this.t("restoreJson")}</button><button class="secondary" data-action="export-json"><ha-icon icon="mdi:download"></ha-icon>${this.t("exportJson")}</button></div></div>
+    return `<section class="card settings-card backup-card"><div class="section-head"><div><h2>${this.t("fullBackup")}</h2><p>${this.t("fullBackupHelp")}</p></div><div class="backup-actions"><input id="backup-file" type="file" accept="application/json,application/zip,.json,.zip" hidden><button class="secondary" data-action="restore-backup-file"><ha-icon icon="mdi:backup-restore"></ha-icon>${this.t("restoreBackupFile")}</button><button class="primary" data-action="export-zip"><ha-icon icon="mdi:folder-zip-outline"></ha-icon>${this.t("exportZip")}</button><button class="secondary" data-action="export-json" title="${this.t("dataOnly")}"><ha-icon icon="mdi:code-json"></ha-icon>${this.t("exportJson")}</button></div></div>
       <div class="backup-list">${(this.data.backups || []).map(backup => `<div><span><strong>${esc(this.formatDate(backup.created_at))}</strong><small>${esc(backup.reason)} · ${esc(backup.device_count)} ${this.t("devices").toLowerCase()}</small></span><button class="secondary compact" data-restore-backup="${esc(backup.id)}">${this.t("restore")}</button></div>`).join("") || `<p class="muted">${this.t("automaticBackups")}: 0</p>`}</div>
     </section>`;
   }
@@ -953,11 +982,14 @@ class NetworkInventoryPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll("[data-action='unifi-disconnect']").forEach(button => button.addEventListener("click", () => this.disconnectUnifi(button)));
     this.shadowRoot.querySelector("[data-action='add-protocol']")?.addEventListener("click", () => this.addProtocolRow());
     this.shadowRoot.querySelectorAll("[data-remove-protocol]").forEach(button => button.addEventListener("click", () => button.closest(".protocol-setting").remove()));
+    this.shadowRoot.querySelector("[data-action='add-custom-field']")?.addEventListener("click", () => this.addCustomFieldRow());
+    this.shadowRoot.querySelectorAll("[data-remove-custom-field]").forEach(button => button.addEventListener("click", () => button.closest(".custom-field-setting").remove()));
     this.shadowRoot.querySelectorAll("#time-format,#date-format").forEach(select => select.addEventListener("change", () => this.updateFormatPreview()));
     this.shadowRoot.querySelector("#settings-form")?.addEventListener("submit", event => this.saveSettings(event));
     this.shadowRoot.querySelector("[data-action='export-json']")?.addEventListener("click", () => this.exportJson());
-    this.shadowRoot.querySelector("[data-action='restore-json']")?.addEventListener("click", () => this.shadowRoot.querySelector("#json-file").click());
-    this.shadowRoot.querySelector("#json-file")?.addEventListener("change", event => this.restoreJson(event.target.files[0]));
+    this.shadowRoot.querySelector("[data-action='export-zip']")?.addEventListener("click", () => this.exportFullBackup());
+    this.shadowRoot.querySelector("[data-action='restore-backup-file']")?.addEventListener("click", () => this.shadowRoot.querySelector("#backup-file").click());
+    this.shadowRoot.querySelector("#backup-file")?.addEventListener("change", event => this.restoreBackupFile(event.target.files[0]));
     this.shadowRoot.querySelectorAll("[data-restore-backup]").forEach(button => button.addEventListener("click", () => this.restoreInternalBackup(button.dataset.restoreBackup)));
     this.bindDeviceTableEvents();
     this.bindDeviceDrawerEvents();
@@ -1074,6 +1106,10 @@ class NetworkInventoryPanel extends HTMLElement {
     drawer.querySelector("[data-sync-ip]")?.addEventListener("click", event => this.updateInventoryIp(event.currentTarget.dataset.syncIp));
     drawer.querySelector("[data-battery-replace]")?.addEventListener("click", event => this.openBatteryReplacementModal(event.currentTarget.dataset.batteryReplace));
     drawer.querySelector("[data-firmware-update]")?.addEventListener("click", event => this.openFirmwareUpdateModal(event.currentTarget.dataset.firmwareUpdate));
+    drawer.querySelector("[data-add-attachments]")?.addEventListener("click", () => drawer.querySelector("[data-attachment-input]").click());
+    drawer.querySelector("[data-attachment-input]")?.addEventListener("change", event => this.uploadAttachments(this.activeDeviceId, [...event.target.files]));
+    drawer.querySelectorAll("[data-download-attachment]").forEach(button => button.addEventListener("click", () => this.downloadAttachment(this.activeDeviceId, button.dataset.downloadAttachment)));
+    drawer.querySelectorAll("[data-delete-attachment]").forEach(button => button.addEventListener("click", () => this.deleteAttachment(this.activeDeviceId, button.dataset.deleteAttachment)));
   }
 
   bindColumnResizers() {
@@ -1241,7 +1277,7 @@ class NetworkInventoryPanel extends HTMLElement {
       (!this.statusFilter || device.status === this.statusFilter) &&
       (!this.labelFilter || (device.labels || []).includes(this.labelFilter)) &&
       (!this.ipFilter || (this.ipFilter === "mismatch" && this.hasIpMismatch(device)) || (this.ipFilter === "duplicate" && this.devicesWithIp(device.ip_address).length > 1)) &&
-      (!q || Object.values(device).join(" ").toLowerCase().includes(q))
+      (!q || JSON.stringify(device).toLowerCase().includes(q))
     );
     const sortValue = device => {
       if (this.sortKey === "labels") return (device.labels || []).join(" ");
@@ -1388,6 +1424,8 @@ class NetworkInventoryPanel extends HTMLElement {
         : "";
       return `<option value="">${this.t("noBatteryEntity")}</option>${missing}${batteryEntities.map(entity => `<option value="${esc(entity.entity_id)}" ${selected === entity.entity_id ? "selected" : ""}>${entity.device_id && entity.device_id === relatedId ? `★ ${this.t("relatedBattery")} · ` : ""}${esc(entity.name)} · ${esc(entity.entity_id)}${entity.level !== null ? ` · ${esc(entity.level)}%` : ""}</option>`).join("")}`;
     };
+    const customFields = (this.data.custom_fields || []).map(definition => this.customFieldInput(definition, device?.custom_values?.[definition.id])).join("");
+    const linkRows = (device?.links || []).map(link => this.deviceLinkRow(link)).join("");
     const modal = this.shadowRoot.querySelector("#modal");
     modal.innerHTML = `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><div><h2>${isEdit ? this.t("edit") : this.t("addDevice")}</h2><p>${isEdit ? `${this.t("code")}: ${device.device_code}` : this.t("autoId")}</p></div><button type="button" data-close><ha-icon icon="mdi:close"></ha-icon></button></div>
       <form id="device-form"><div class="form-grid">
@@ -1400,10 +1438,13 @@ class NetworkInventoryPanel extends HTMLElement {
         ${field("mac", this.t("address"), device?.mac, !isChildDevice)}${field("ip_address", this.t("ip"), device?.ip_address, ipRequired)}
         ${field("device_identifier", this.t("identifier"), device?.device_identifier)}<label>${this.t("haPrimaryEntity")}<input name="primary_entity_id" list="ha-primary-entities" value="${esc(device?.primary_entity_id || "")}" placeholder="${this.t("selectPrimaryEntity")}"><datalist id="ha-primary-entities">${primaryEntityOptions}</datalist></label>
         ${field("integration", this.t("integration"), device?.integration)}
+        <label>${this.t("adminUrl")}<input name="admin_url" type="url" value="${esc(device?.admin_url || "")}" placeholder="https://"></label>
         <label>${this.t("status")}<select name="status"><option value="unknown">${this.t("unknown")}</option><option value="online" ${device?.status === "online" ? "selected" : ""}>Online</option><option value="offline" ${device?.status === "offline" ? "selected" : ""}>Offline</option></select></label>
         <fieldset class="full battery-fields"><legend>${this.t("batteryPowered")}</legend><label>${this.t("batteryEntity")}<select name="battery_entity_id">${batteryOptionsFor(initialBatteryEntity, relatedDeviceId)}</select></label><label>${this.t("lastBatteryChange")}<input name="battery_last_replaced_at" type="date" value="${esc(device?.battery_last_replaced_at || "")}"></label></fieldset>
         <fieldset class="full network-fields"><legend>${this.t("networkDetails")}</legend>${field("network", this.t("network"), device?.network)}${field("vlan", this.t("vlan"), device?.vlan)}${field("ssid", this.t("ssid"), device?.ssid)}${field("connected_device", this.t("connectedDevice"), device?.connected_device)}${field("switch_port", this.t("switchPort"), device?.switch_port)}</fieldset>
         <label class="full">${this.t("labels")}<details class="label-picker"><summary>${selectedLabels.size ? esc([...selectedLabels].join(", ")) : this.t("labels")}</summary><div>${labelOptions || `<small>${this.t("labelSettings")}</small>`}</div></details></label>
+        ${customFields ? `<fieldset class="full custom-values-fields"><legend>${this.t("customFields")}</legend>${customFields}</fieldset>` : ""}
+        <fieldset class="full device-links-fields"><legend>${this.t("links")}</legend><div id="device-link-rows">${linkRows}</div><button type="button" class="secondary compact" data-add-device-link><ha-icon icon="mdi:plus"></ha-icon>${this.t("addLink")}</button></fieldset>
         <label class="full">${this.t("comments")}<textarea name="comments" rows="3">${esc(device?.comments || "")}</textarea></label>
       </div><div class="modal-actions"><button type="button" class="secondary" data-close>${this.t("cancel")}</button><button type="submit" class="primary">${this.t("save")}</button></div></form></section></div>`;
     modal.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", () => modal.innerHTML = ""));
@@ -1424,7 +1465,24 @@ class NetworkInventoryPanel extends HTMLElement {
       modal.querySelector("[name='device_code']").value = "";
       modal.querySelector("[data-id-help]").textContent = this.t("newIdHelp");
     });
+    modal.querySelector("[data-add-device-link]").addEventListener("click", () => {
+      const container = modal.querySelector("#device-link-rows");
+      container.insertAdjacentHTML("beforeend", this.deviceLinkRow());
+      container.lastElementChild.querySelector("[data-remove-device-link]").addEventListener("click", event => event.currentTarget.closest(".device-link-row").remove());
+    });
+    modal.querySelectorAll("[data-remove-device-link]").forEach(button => button.addEventListener("click", event => event.currentTarget.closest(".device-link-row").remove()));
     modal.querySelector("#device-form").addEventListener("submit", event => this.saveDevice(event, isEdit ? device : null, isImport ? device : null));
+  }
+
+  customFieldInput(definition, value) {
+    const name = `custom_${definition.id}`;
+    if (definition.type === "boolean") return `<label class="custom-checkbox"><input type="checkbox" name="${esc(name)}" ${value ? "checked" : ""}><span>${esc(definition.label)}</span></label>`;
+    const type = definition.type === "number" ? "number" : definition.type === "date" ? "date" : definition.type === "url" ? "url" : "text";
+    return `<label>${esc(definition.label)}<input type="${type}" name="${esc(name)}" value="${esc(value ?? "")}" ${type === "number" ? "step=\"any\"" : ""}></label>`;
+  }
+
+  deviceLinkRow(link = { id: "", label: "", url: "" }) {
+    return `<div class="device-link-row"><input type="hidden" data-link-id value="${esc(link.id || "")}"><input data-link-label value="${esc(link.label || "")}" placeholder="${this.t("linkName")}"><input data-link-url type="url" value="${esc(link.url || "")}" placeholder="https://"><button type="button" class="danger-icon" data-remove-device-link title="${this.t("delete")}"><ha-icon icon="mdi:close"></ha-icon></button></div>`;
   }
 
   async saveDevice(event, existing, importSource = null) {
@@ -1432,6 +1490,16 @@ class NetworkInventoryPanel extends HTMLElement {
     const form = event.currentTarget;
     const payload = Object.fromEntries(new FormData(form).entries());
     payload.labels = [...form.querySelectorAll("[name='labels']:checked")].map(input => input.value);
+    payload.custom_values = Object.fromEntries((this.data.custom_fields || []).map(definition => {
+      const input = form.elements[`custom_${definition.id}`];
+      delete payload[`custom_${definition.id}`];
+      return [definition.id, definition.type === "boolean" ? Boolean(input?.checked) : (input?.value || "")];
+    }));
+    payload.links = [...form.querySelectorAll(".device-link-row")].map(row => ({
+      id: row.querySelector("[data-link-id]").value,
+      label: row.querySelector("[data-link-label]").value.trim(),
+      url: row.querySelector("[data-link-url]").value.trim()
+    })).filter(link => link.label || link.url);
     const primaryEntity = (this.data.ha_entities || []).find(entity => entity.entity_id === payload.primary_entity_id);
     if (primaryEntity?.device_id) payload.ha_device_id = primaryEntity.device_id;
     if (!payload.name.trim()) return this.toast(this.t("requiredName"), true);
@@ -1465,8 +1533,8 @@ class NetworkInventoryPanel extends HTMLElement {
   }
 
   exportCsv() {
-    const headers = ["Device Code","MAC / IEEE Address","Device IP","Device Type","Brand","Area","Device Name","Device ID","HA Primary Entity","Comments","Protocol","Network","VLAN","SSID","AP / Switch","Switch Port","Labels","Battery Entity","Last Battery Change"];
-    const keys = ["device_code","mac","ip_address","device_type","brand","area","name","device_identifier","primary_entity_id","comments","protocol","network","vlan","ssid","connected_device","switch_port","labels","battery_entity_id","battery_last_replaced_at"];
+    const headers = ["Device Code","MAC / IEEE Address","Device IP","Device Type","Brand","Area","Device Name","Device ID","HA Primary Entity","Admin URL","Comments","Protocol","Network","VLAN","SSID","AP / Switch","Switch Port","Labels","Battery Entity","Last Battery Change"];
+    const keys = ["device_code","mac","ip_address","device_type","brand","area","name","device_identifier","primary_entity_id","admin_url","comments","protocol","network","vlan","ssid","connected_device","switch_port","labels","battery_entity_id","battery_last_replaced_at"];
     const lines = [headers, ...this.data.devices.sort((a,b) => a.device_code-b.device_code).map(d => keys.map(k => Array.isArray(d[k]) ? d[k].join(";") : (d[k] ?? "")))];
     const csv = lines.map(row => row.map(csvCell).join(",")).join("\r\n");
     const link = document.createElement("a");
@@ -1481,6 +1549,12 @@ class NetworkInventoryPanel extends HTMLElement {
     container.lastElementChild.querySelector("[data-remove-protocol]").addEventListener("click", event => event.currentTarget.closest(".protocol-setting").remove());
   }
 
+  addCustomFieldRow() {
+    const container = this.shadowRoot.querySelector("#custom-field-rows");
+    container.insertAdjacentHTML("beforeend", this.customFieldRow());
+    container.lastElementChild.querySelector("[data-remove-custom-field]").addEventListener("click", event => event.currentTarget.closest(".custom-field-setting").remove());
+  }
+
   async saveSettings(event) {
     event.preventDefault();
     const protocolRows = this.shadowRoot.querySelectorAll(".protocol-setting");
@@ -1492,11 +1566,17 @@ class NetworkInventoryPanel extends HTMLElement {
     const device_types = this.shadowRoot.querySelector("#device-types")?.value.split("\n").map(v => v.trim()).filter(Boolean) || this.data.device_types;
     const brands = this.shadowRoot.querySelector("#brands")?.value.split("\n").map(v => v.trim()).filter(Boolean) || this.data.brands;
     const labels = this.shadowRoot.querySelector("#labels")?.value.split("\n").map(v => v.trim()).filter(Boolean) || this.data.labels;
+    const customFieldContainer = this.shadowRoot.querySelector("#custom-field-rows");
+    const custom_fields = customFieldContainer ? [...customFieldContainer.querySelectorAll(".custom-field-setting")].map(row => ({
+      id: row.querySelector("[name='id']").value,
+      label: row.querySelector("[name='label']").value.trim(),
+      type: row.querySelector("[name='type']").value
+    })) : this.data.custom_fields;
     const general = {
       time_format: this.shadowRoot.querySelector("#time-format")?.value || this.data.general.time_format,
       date_format: this.shadowRoot.querySelector("#date-format")?.value || this.data.general.date_format
     };
-    try { await this._hass.callWS({ type: "network_inventory/settings", settings: { general, protocols, device_types, brands, labels } }); await this.reload(this.t("saved")); }
+    try { await this._hass.callWS({ type: "network_inventory/settings", settings: { general, protocols, device_types, brands, labels, custom_fields } }); await this.reload(this.t("saved")); }
     catch (error) { this.toast(error?.message || this.t("error"), true); }
   }
 
@@ -1516,6 +1596,74 @@ class NetworkInventoryPanel extends HTMLElement {
       link.download = `network-inventory-backup-${new Date().toISOString().slice(0,10)}.json`;
       link.click(); URL.revokeObjectURL(link.href);
     } catch (error) { this.toast(error?.message || this.t("error"), true); }
+  }
+
+  async exportFullBackup() {
+    try {
+      const response = await this._hass.fetchWithAuth("/api/network_inventory/backup");
+      if (!response.ok) throw new Error(await this.apiError(response));
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(await response.blob());
+      link.download = `network-inventory-full-${new Date().toISOString().slice(0,10)}.zip`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (error) { this.toast(error?.message || this.t("error"), true); }
+  }
+
+  async restoreBackupFile(file) {
+    if (!file || !confirm(this.t("confirmRestore"))) return;
+    const body = new FormData();
+    body.append("file", file);
+    try {
+      const response = await this._hass.fetchWithAuth("/api/network_inventory/restore", { method: "POST", body });
+      if (!response.ok) throw new Error(await this.apiError(response));
+      await this.reload(this.t("restored"));
+    } catch (error) { this.toast(error?.message || this.t("error"), true); }
+  }
+
+  async uploadAttachments(deviceId, files) {
+    if (!deviceId || !files.length) return;
+    if (files.some(file => file.size > 10 * 1024 * 1024)) return this.toast(this.t("attachmentTooLarge"), true);
+    try {
+      for (const file of files) {
+        const body = new FormData();
+        body.append("file", file);
+        const response = await this._hass.fetchWithAuth(`/api/network_inventory/devices/${encodeURIComponent(deviceId)}/attachments`, { method: "POST", body });
+        if (!response.ok) throw new Error(await this.apiError(response));
+      }
+      await this.reload(this.t("attachmentAdded"));
+      this.openDeviceDrawer(deviceId);
+    } catch (error) { this.toast(error?.message || this.t("error"), true); }
+  }
+
+  async downloadAttachment(deviceId, attachmentId) {
+    const device = this.data.devices.find(item => item.id === deviceId);
+    const attachment = device?.attachments?.find(item => item.id === attachmentId);
+    if (!attachment) return;
+    try {
+      const response = await this._hass.fetchWithAuth(`/api/network_inventory/devices/${encodeURIComponent(deviceId)}/attachments/${encodeURIComponent(attachmentId)}`);
+      if (!response.ok) throw new Error(await this.apiError(response));
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(await response.blob());
+      link.download = attachment.name;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (error) { this.toast(error?.message || this.t("error"), true); }
+  }
+
+  async deleteAttachment(deviceId, attachmentId) {
+    if (!confirm(this.t("confirmDeleteAttachment"))) return;
+    try {
+      const response = await this._hass.fetchWithAuth(`/api/network_inventory/devices/${encodeURIComponent(deviceId)}/attachments/${encodeURIComponent(attachmentId)}`, { method: "DELETE" });
+      if (!response.ok) throw new Error(await this.apiError(response));
+      await this.reload(this.t("attachmentDeleted"));
+      this.openDeviceDrawer(deviceId);
+    } catch (error) { this.toast(error?.message || this.t("error"), true); }
+  }
+
+  async apiError(response) {
+    try { return (await response.json()).error || this.t("error"); }
+    catch (_error) { return this.t("error"); }
   }
 
   async restoreJson(file) {
@@ -1564,6 +1712,13 @@ function field(name, label, value = "", required = false) {
   return `<label>${label}<input name="${name}" value="${esc(value || "")}" ${required ? "required" : ""}></label>`;
 }
 
+function formatFileSize(value) {
+  const bytes = Number(value) || 0;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
 function esc(value) {
   return String(value ?? "").replace(/[&<>"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[char]);
 }
@@ -1610,7 +1765,7 @@ function csvToDevices(text) {
     device_code: find("devicecode", "code"), mac: find("macieeeaddress", "macaddress", "mac", "ieee"),
     ip_address: find("deviceip", "ipaddress", "ip"), device_type: find("devicetype", "type"), brand: find("brand", "manufacturer"),
     area: find("area", "room"), name: find("devicename", "name"), device_identifier: find("deviceid", "identifier"),
-    primary_entity_id: find("haprimaryentity", "primaryentity", "primaryentityid"),
+    primary_entity_id: find("haprimaryentity", "primaryentity", "primaryentityid"), admin_url: find("adminurl", "managementurl"),
     comments: find("comments", "notes"), protocol: find("protocol", "connection"),
     network: find("network", "networkname"), vlan: find("vlan", "vlanid"), ssid: find("ssid"),
     connected_device: find("apswitch", "connecteddevice", "uplink"), switch_port: find("switchport", "port"), labels: find("labels"),
@@ -1635,7 +1790,7 @@ const BASE_CSS = `
   .toolbar{display:flex;gap:10px;margin-bottom:10px;padding:12px}.filters{display:grid;grid-template-columns:repeat(7,minmax(110px,1fr)) auto;gap:10px;margin-bottom:10px;padding:12px}.search{flex:1;min-width:190px;display:flex;align-items:center;gap:8px;border:1px solid var(--divider-color);border-radius:9px;padding:0 11px}.search input{border:0;background:transparent;width:100%;outline:0;height:40px}select,input,textarea{border:1px solid var(--divider-color);background:var(--card-background-color);border-radius:8px;padding:10px;outline:none}select:focus,input:focus,textarea:focus{border-color:var(--primary-color);box-shadow:0 0 0 2px color-mix(in srgb,var(--primary-color) 18%,transparent)}.bulk-toolbar{padding:10px 12px;margin-bottom:14px;display:flex;align-items:center;gap:16px}.bulk-toolbar>label{display:flex;align-items:center;gap:7px;font-size:12px}.bulk-toolbar input,.select-cell input{width:17px;height:17px;accent-color:var(--primary-color)}.bulk-toolbar>span{font-size:12px;color:var(--secondary-text-color)}.bulk-toolbar>div{display:flex;gap:8px;margin-left:auto}.bulk-toolbar.active{border-color:color-mix(in srgb,var(--primary-color) 55%,var(--divider-color));background:color-mix(in srgb,var(--primary-color) 5%,var(--card-background-color))}.table-card{overflow:hidden}.table-scroll{overflow:visible}table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:13px}th{text-align:left;color:var(--secondary-text-color);font-size:11px;text-transform:uppercase;letter-spacing:.35px;background:var(--secondary-background-color);padding:12px}th:nth-child(1){width:42px}th:nth-child(2){width:72px}th:nth-child(3){width:25%}th:nth-child(4){width:22%}th:nth-child(5){width:27%}th:nth-child(6){width:110px}th:nth-child(7){width:150px}td{padding:12px;border-top:1px solid var(--divider-color);overflow-wrap:anywhere;vertical-align:top}.select-cell{padding-right:0}.mono{font-family:ui-monospace,monospace;font-size:12px}.pill{display:inline-flex;border-radius:20px;padding:4px 9px;background:color-mix(in srgb,var(--pill) 14%,transparent);color:var(--pill);font-size:12px;font-weight:650}.row-actions{display:flex;justify-content:flex-end}.row-actions button,.row-actions a,.modal-head button,.danger-icon{width:36px;height:36px;border-radius:8px;display:grid;place-items:center;color:inherit;text-decoration:none}.row-actions button:hover,.row-actions a:hover,.modal-head button:hover{background:var(--secondary-background-color)}.danger-icon{color:var(--error-color,#dc2626)}.address-cell>span{white-space:normal}.ip-warning,.duplicate-warning{display:flex;align-items:center;gap:4px;margin-top:5px;font-family:system-ui,sans-serif;font-size:10px;color:#b45309;white-space:normal}.duplicate-warning{color:var(--error-color,#c62828);max-width:280px}.ip-warning button{display:grid;place-items:center;width:24px;height:24px;border-radius:6px;color:inherit}.ip-warning button:hover{background:#fef3c7}.ip-warning ha-icon,.duplicate-warning ha-icon{--mdc-icon-size:14px;flex:0 0 auto}.label-list{display:flex;gap:4px;flex-wrap:wrap;margin-top:7px}.label-list span{font:650 10px system-ui,sans-serif;padding:3px 6px;border-radius:10px;background:var(--secondary-background-color);color:var(--secondary-text-color)}
   .section-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}.section-head h2{margin:0 0 4px}.import-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.import-card{padding:15px;display:flex;align-items:center;gap:13px}.card-actions{display:flex;flex-direction:column;gap:7px;align-items:stretch}.card-actions a{text-decoration:none}.device-icon{width:42px;height:42px;border-radius:11px;background:var(--secondary-background-color);display:grid;place-items:center;color:var(--primary-color)}.unifi-icon{background:#e0f2fe;color:#0284c7}.grow{flex:1;min-width:0}.import-card p{font-size:12px;color:var(--secondary-text-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.meta{display:flex;gap:7px;margin-top:8px;align-items:center;flex-wrap:wrap}.meta>span:not(.pill){font-size:11px;color:var(--secondary-text-color)}.empty{padding:50px;text-align:center;color:var(--secondary-text-color)}.empty ha-icon{--mdc-icon-size:42px;margin-bottom:10px}.standalone{background:var(--card-background-color);border-radius:14px}.discover-empty button{margin-top:18px}
   .device-name{display:flex;align-items:center;gap:7px}.unifi-badge{display:inline-flex;align-items:center;gap:3px;border-radius:20px;padding:3px 7px;background:#e0f2fe;color:#0369a1;font-size:10px;font-weight:750}.unifi-badge ha-icon{--mdc-icon-size:13px}.integration-card{display:flex;align-items:flex-start;gap:16px}.integration-logo{width:54px;height:54px;flex:0 0 54px;border-radius:14px;background:#e0f2fe;color:#0284c7;display:grid;place-items:center}.integration-logo ha-icon{--mdc-icon-size:30px}.shelly-logo{background:#e0f7fa;color:#00a2b8}.integration-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.integration-title h2{margin:0}.native-badge{font-size:10px;font-weight:750;padding:4px 8px;border-radius:20px;background:#e0f7fa;color:#007d8e}.status-dot{font-size:11px;font-weight:700;padding:4px 8px;border-radius:20px;background:var(--secondary-background-color);color:var(--secondary-text-color)}.status-dot.ok{background:#d1fae5;color:#047857}.integration-metrics{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}.integration-metrics>div{min-width:120px;padding:11px 13px;border:1px solid var(--divider-color);border-radius:10px;background:color-mix(in srgb,var(--secondary-background-color) 45%,var(--card-background-color))}.integration-metrics strong{display:block;font-size:18px}.integration-metrics span{display:block;margin-top:2px;color:var(--secondary-text-color);font-size:10px}.integration-metrics .attention{border-color:#f59e0b;background:#fffbeb}.integration-metrics .attention strong{color:#b45309}.integration-notice{display:flex;align-items:flex-start;gap:7px;margin-top:12px;color:#b45309;font-size:11px;line-height:1.45}.integration-notice ha-icon{--mdc-icon-size:17px;flex:0 0 auto}.inline-form{display:flex;align-items:end;gap:10px;margin:16px 0 8px}.inline-form label{display:grid;gap:6px;flex:1;max-width:520px;font-size:12px;color:var(--secondary-text-color)}.inline-form input,.inline-form select{width:100%}.doc-link{display:inline-flex;align-items:center;gap:5px;color:var(--primary-color);font-size:12px;margin-top:12px;text-decoration:none}.doc-link ha-icon{--mdc-icon-size:14px}.integration-actions{display:flex;gap:8px}.integration-actions a{text-decoration:none}.danger-text{color:var(--error-color,#c62828)}.inline-error{color:var(--error-color,#c62828);font-size:12px;margin-top:8px}.details-modal{width:min(600px,100%)}.detail-list{padding:8px 20px 22px}.detail-list>div{display:grid;grid-template-columns:150px 1fr;gap:15px;padding:12px 0;border-bottom:1px solid var(--divider-color)}.detail-list span{font-size:12px;color:var(--secondary-text-color)}.detail-list strong{font-size:13px;overflow-wrap:anywhere}
-  .settings-card{margin-bottom:14px}.settings-help{margin:-10px 0 14px}.general-settings{max-width:760px;padding:0;overflow:hidden}.general-settings>label{display:grid;grid-template-columns:minmax(0,1fr) 260px;align-items:center;gap:28px;padding:18px 20px;border-bottom:1px solid var(--divider-color)}.general-settings>label>span{display:grid;gap:5px}.general-settings>label strong{font-size:14px}.general-settings>label small,.format-preview small{color:var(--secondary-text-color);font-size:11px}.general-settings select{width:100%}.format-preview{display:flex;align-items:center;gap:12px;padding:18px 20px;background:color-mix(in srgb,var(--primary-color) 5%,var(--card-background-color))}.format-preview>ha-icon{--mdc-icon-size:27px;color:var(--primary-color)}.format-preview>span{display:grid;gap:4px}.format-preview strong{font-size:15px}.protocol-settings{display:grid;gap:10px}.protocol-setting{display:grid;grid-template-columns:1fr 1.3fr .7fr .7fr .55fr 40px;gap:10px;align-items:end;padding:12px;border:1px solid var(--divider-color);border-radius:10px}.protocol-setting label,.form-grid label{font-size:12px;color:var(--secondary-text-color);display:grid;gap:6px}.protocol-setting input{width:100%}.protocol-setting input[type=color]{height:41px;padding:5px}.settings-card textarea{width:100%;resize:vertical}.form-actions{display:flex;justify-content:flex-end;margin-bottom:14px}.backup-actions{display:flex;gap:8px}.backup-list>div{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-top:1px solid var(--divider-color)}.backup-list small{display:block;color:var(--secondary-text-color);margin-top:3px}.log-list{display:grid;gap:10px}.log-entry{display:flex;gap:13px;padding:15px}.log-icon{width:38px;height:38px;flex:0 0 38px;border-radius:10px;background:#dbeafe;color:#2563eb;display:grid;place-items:center}.log-icon.delete{background:#fee2e2;color:#dc2626}.log-icon.restore{background:#ede9fe;color:#7c3aed}.log-title{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.log-title span,.log-entry small{font-size:11px;color:var(--secondary-text-color)}.log-entry p{font-size:12px;margin-top:7px}.change-list{margin-top:9px}.change-list>div{display:grid;grid-template-columns:130px minmax(0,1fr) 20px minmax(0,1fr);gap:7px;align-items:center;padding:5px 0;font-size:11px}.change-list b{font-weight:650}.change-list span{overflow-wrap:anywhere}.change-list ha-icon{--mdc-icon-size:14px;color:var(--secondary-text-color)}
+  .settings-card{margin-bottom:14px}.settings-help{margin:-10px 0 14px}.general-settings{max-width:760px;padding:0;overflow:hidden}.general-settings>label{display:grid;grid-template-columns:minmax(0,1fr) 260px;align-items:center;gap:28px;padding:18px 20px;border-bottom:1px solid var(--divider-color)}.general-settings>label>span{display:grid;gap:5px}.general-settings>label strong{font-size:14px}.general-settings>label small,.format-preview small{color:var(--secondary-text-color);font-size:11px}.general-settings select{width:100%}.format-preview{display:flex;align-items:center;gap:12px;padding:18px 20px;background:color-mix(in srgb,var(--primary-color) 5%,var(--card-background-color))}.format-preview>ha-icon{--mdc-icon-size:27px;color:var(--primary-color)}.format-preview>span{display:grid;gap:4px}.format-preview strong{font-size:15px}.protocol-settings,.custom-field-settings{display:grid;gap:10px}.protocol-setting{display:grid;grid-template-columns:1fr 1.3fr .7fr .7fr .55fr 40px;gap:10px;align-items:end;padding:12px;border:1px solid var(--divider-color);border-radius:10px}.custom-field-setting{display:grid;grid-template-columns:minmax(180px,1fr) minmax(150px,.6fr) 40px;gap:10px;align-items:end;padding:12px;border:1px solid var(--divider-color);border-radius:10px}.custom-field-setting label,.protocol-setting label,.form-grid label{font-size:12px;color:var(--secondary-text-color);display:grid;gap:6px}.protocol-setting input{width:100%}.protocol-setting input[type=color]{height:41px;padding:5px}.settings-card textarea{width:100%;resize:vertical}.form-actions{display:flex;justify-content:flex-end;margin-bottom:14px}.backup-actions{display:flex;gap:8px;flex-wrap:wrap}.backup-list>div{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-top:1px solid var(--divider-color)}.backup-list small{display:block;color:var(--secondary-text-color);margin-top:3px}.log-list{display:grid;gap:10px}.log-entry{display:flex;gap:13px;padding:15px}.log-icon{width:38px;height:38px;flex:0 0 38px;border-radius:10px;background:#dbeafe;color:#2563eb;display:grid;place-items:center}.log-icon.delete{background:#fee2e2;color:#dc2626}.log-icon.restore{background:#ede9fe;color:#7c3aed}.log-title{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.log-title span,.log-entry small{font-size:11px;color:var(--secondary-text-color)}.log-entry p{font-size:12px;margin-top:7px}.change-list{margin-top:9px}.change-list>div{display:grid;grid-template-columns:130px minmax(0,1fr) 20px minmax(0,1fr);gap:7px;align-items:center;padding:5px 0;font-size:11px}.change-list b{font-weight:650}.change-list span{overflow-wrap:anywhere}.change-list ha-icon{--mdc-icon-size:14px;color:var(--secondary-text-color)}
   .modal-backdrop{position:fixed;z-index:20;inset:0;background:#0008;display:grid;place-items:center;padding:18px}.modal{width:min(760px,100%);max-height:92vh;overflow:auto;background:var(--card-background-color);border-radius:16px;box-shadow:0 20px 70px #0006}.modal-head{padding:19px 21px;border-bottom:1px solid var(--divider-color);display:flex;justify-content:space-between}.modal-head h2{margin:0 0 4px}.modal-head p{font-size:12px;color:var(--secondary-text-color)}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:20px}.form-grid input,.form-grid select,.form-grid textarea{width:100%}.form-grid .full{grid-column:1/-1}.form-grid small{min-height:13px}.network-fields{grid-column:1/-1;border:1px solid var(--divider-color);border-radius:10px;padding:12px;display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.network-fields legend{font-size:12px;color:var(--secondary-text-color);padding:0 5px}.network-fields label:last-child{grid-column:1/-1}.label-picker{position:relative}.label-picker summary{list-style:none;border:1px solid var(--divider-color);border-radius:8px;padding:10px;min-height:41px;color:var(--primary-text-color);cursor:pointer}.label-picker summary::-webkit-details-marker{display:none}.label-picker[open]>div{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px;margin-top:4px;border:1px solid var(--divider-color);border-radius:8px;background:var(--card-background-color)}.label-picker label{display:flex;align-items:center;gap:6px;color:var(--primary-text-color)}.label-picker input{width:auto}.bulk-form{padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:12px}.bulk-field{display:grid;grid-template-columns:92px 1fr;gap:10px;align-items:end}.bulk-field>label:last-child,.bulk-labels>label{display:grid;gap:6px;font-size:12px;color:var(--secondary-text-color)}.apply-check{height:41px;display:flex;align-items:center;gap:6px;font-size:12px}.apply-check input{width:17px;height:17px;accent-color:var(--primary-color)}.bulk-field select,.bulk-field input{width:100%}.bulk-labels{grid-column:1/-1;border-top:1px solid var(--divider-color);padding-top:14px}.bulk-label-options{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}.bulk-label-options label{display:flex;align-items:center;gap:6px;font-size:12px}.bulk-label-options input{width:17px;height:17px;accent-color:var(--primary-color)}.bulk-label-options.disabled{opacity:.45}.id-field{display:grid;grid-template-columns:1fr 42px;gap:7px}.id-field button{width:42px;padding:0}.modal-actions{padding:15px 20px;border-top:1px solid var(--divider-color);display:flex;justify-content:flex-end;gap:9px}#toast{position:fixed;z-index:30;left:50%;bottom:30px;transform:translate(-50%,30px);background:#17202a;color:#fff;padding:11px 16px;border-radius:9px;opacity:0;pointer-events:none;transition:.2s}#toast.show{opacity:1;transform:translate(-50%,0)}#toast.error{background:var(--error-color,#c62828)}.state{min-height:70vh;display:flex;align-items:center;justify-content:center;gap:12px;color:var(--secondary-text-color)}.spinner{width:22px;height:22px;border:3px solid var(--divider-color);border-top-color:var(--primary-color);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
   @media(max-width:900px){.stats{grid-template-columns:repeat(2,1fr)}.grid-two,.import-grid{grid-template-columns:1fr}.toolbar{flex-wrap:wrap}.search{flex-basis:100%}.filters{grid-template-columns:repeat(2,minmax(0,1fr))}.protocol-setting{grid-template-columns:1fr 1fr 1fr}.protocol-setting .danger-icon{align-self:end}.app{padding:18px 14px 50px}.integration-card{flex-wrap:wrap}.integration-actions{width:100%;justify-content:flex-end}}
   @media(max-width:600px){header{align-items:flex-start}header h1{font-size:22px}header .primary{font-size:0;width:42px;padding:0}header .primary ha-icon{font-size:initial}.stats{gap:9px}.stat{padding:13px;gap:10px}.stat-icon{width:38px;height:38px}.stat strong{font-size:20px}.nav{padding:11px 12px}.nav span{font-size:12px}.toolbar .secondary{flex:1;font-size:12px;padding:0 8px}.filters{grid-template-columns:1fr}.bulk-toolbar{align-items:flex-start;flex-wrap:wrap}.bulk-toolbar>div{width:100%;margin-left:0}.bulk-toolbar>div button{flex:1}.form-grid{grid-template-columns:1fr}.form-grid .full,.network-fields,.network-fields label:last-child{grid-column:auto}.network-fields{grid-template-columns:1fr}.label-picker[open]>div{grid-template-columns:repeat(2,1fr)}.bulk-form{grid-template-columns:1fr}.bulk-labels{grid-column:auto}.bulk-label-options{grid-template-columns:repeat(2,1fr)}.protocol-setting{grid-template-columns:1fr 1fr}.general-settings>label{grid-template-columns:1fr;gap:10px}.import-card{align-items:flex-start}.import-card .primary{align-self:center}.section-head{align-items:flex-start}.section-head .secondary{font-size:0;width:42px;padding:0}.section-head .secondary ha-icon{font-size:initial}.inline-form{align-items:stretch;flex-direction:column}.inline-form button{width:100%}.detail-list>div{grid-template-columns:1fr;gap:4px}.backup-actions{flex-wrap:wrap;justify-content:flex-end}.change-list>div{grid-template-columns:1fr}.change-list ha-icon{transform:rotate(90deg)}table,thead,tbody,tr,th,td{display:block}thead{display:none}tbody{display:grid;gap:10px;padding:10px}tr{border:1px solid var(--divider-color);border-radius:10px;padding:10px}td{border:0;padding:6px}td:first-child{float:right}.row-actions{justify-content:flex-start}}
@@ -1645,10 +1800,11 @@ const BASE_CSS = `
   .device-name-cell{display:flex;width:100%;min-width:0}.device-name-cell strong{display:block;min-width:0;max-width:none;flex:1;white-space:nowrap}
   .battery-fields{grid-column:1/-1;border:1px solid var(--divider-color);border-radius:10px;padding:12px;display:grid;grid-template-columns:1.5fr 1fr;gap:12px}.battery-fields legend{font-size:12px;color:var(--secondary-text-color);padding:0 5px}.battery-fields label{display:grid;gap:6px;font-size:12px;color:var(--secondary-text-color)}.battery-fields select,.battery-fields input{width:100%}.battery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}.battery-card{padding:17px;cursor:pointer;transition:transform .15s ease,border-color .15s ease}.battery-card:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--primary-color) 45%,var(--divider-color))}.battery-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding-bottom:15px}.battery-card h3{font-size:16px;margin:5px 0 4px}.battery-card p{font-size:12px;color:var(--secondary-text-color)}.battery-card-details{display:grid;gap:8px;padding:13px 0;border-top:1px solid var(--divider-color);border-bottom:1px solid var(--divider-color)}.battery-card-details>div{display:grid;grid-template-columns:125px minmax(0,1fr);gap:10px}.battery-card-details span{font-size:11px;color:var(--secondary-text-color)}.battery-card-details strong{font-size:11px;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.battery-card-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:13px}.battery-health{font-size:10px;font-weight:750;text-transform:uppercase;letter-spacing:.45px}.battery-health.good{color:#059669}.battery-health.medium{color:#d97706}.battery-health.low{color:#dc2626}.battery-health.unknown{color:var(--secondary-text-color)}.battery-indicator{display:inline-flex;align-items:center;gap:5px;font-size:11px}.battery-indicator ha-icon{--mdc-icon-size:20px}.battery-indicator.large{padding:7px 9px;border-radius:9px;background:var(--secondary-background-color);font-size:14px}.battery-indicator.large ha-icon{--mdc-icon-size:26px}.battery-indicator.good{color:#059669}.battery-indicator.medium{color:#d97706}.battery-indicator.low{color:#dc2626}.battery-indicator.unknown{color:var(--secondary-text-color)}.drawer-section-title{display:flex!important;grid-template-columns:none!important;align-items:center;justify-content:space-between;padding:0 0 7px!important}.drawer-section-title h3{margin:0!important}.battery-action{color:var(--primary-color);background:color-mix(in srgb,var(--primary-color) 10%,var(--card-background-color))}.battery-history{display:block!important;margin-top:15px;padding-top:13px!important;border-top:1px solid var(--divider-color)!important}.battery-history h4{margin:0 0 10px;font-size:12px}.battery-history>div{display:grid!important;grid-template-columns:12px 1fr!important;gap:8px!important;padding:6px 0!important;border:0!important}.battery-history i{width:8px;height:8px;margin-top:4px;border-radius:50%;background:var(--primary-color)}.battery-history span{display:block!important}.battery-history strong{display:block;text-align:left!important}.battery-history small{display:block;margin-top:2px;color:var(--secondary-text-color)}.battery-modal{width:min(540px,100%)}
   .firmware-indicator{display:inline-flex;align-items:center;gap:6px;max-width:100%;font-size:11px;font-weight:650}.firmware-indicator ha-icon{--mdc-icon-size:18px;flex:0 0 auto}.firmware-indicator.current{color:#059669}.firmware-indicator.update{color:#2563eb}.firmware-indicator.updating{color:#7c3aed}.firmware-indicator.unavailable,.firmware-indicator.disabled{color:var(--secondary-text-color)}.firmware-indicator.large{padding:7px 9px;border-radius:9px;background:var(--secondary-background-color);font-size:11px}.firmware-indicator.large.disabled{max-width:210px}.firmware-action{color:#fff;background:#2563eb}.firmware-action:hover{background:#1d4ed8}.firmware-note{display:flex;align-items:flex-start;gap:7px;margin:12px 0 0;font-size:11px;line-height:1.45;color:var(--secondary-text-color)}.firmware-note ha-icon{--mdc-icon-size:17px;flex:0 0 auto}.firmware-ha-link{text-decoration:none;color:var(--primary-color);background:color-mix(in srgb,var(--primary-color) 10%,var(--card-background-color))}.firmware-release-link{display:flex;align-items:center;gap:6px;width:max-content;margin-top:12px;color:var(--primary-color);font-size:11px;text-decoration:none}.firmware-release-link ha-icon{--mdc-icon-size:15px}.firmware-progress{display:block!important;height:7px;margin-top:13px;padding:0!important;overflow:hidden;border:0!important;border-radius:999px;background:var(--divider-color)}.firmware-progress span{display:block;height:100%;border-radius:inherit;background:var(--primary-color);transition:width .25s ease}.firmware-modal{width:min(560px,100%)}.firmware-confirm{display:flex;align-items:flex-start;gap:16px;padding:24px 22px}.firmware-confirm>ha-icon{--mdc-icon-size:34px;color:#2563eb}.firmware-confirm strong{display:flex;align-items:center;gap:8px;font-size:15px}.firmware-confirm strong ha-icon{--mdc-icon-size:17px;color:var(--secondary-text-color)}.firmware-confirm p{margin-top:9px;color:var(--secondary-text-color);font-size:12px;line-height:1.5}
+  .custom-values-fields,.device-links-fields{grid-column:1/-1;border:1px solid var(--divider-color);border-radius:10px;padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px}.custom-values-fields legend,.device-links-fields legend{font-size:12px;color:var(--secondary-text-color);padding:0 5px}.custom-checkbox{display:flex!important;grid-auto-flow:column;grid-template-columns:auto 1fr!important;align-items:center;justify-content:start}.custom-checkbox input{width:18px;height:18px}.device-links-fields{display:block}.device-link-row{display:grid;grid-template-columns:minmax(120px,.7fr) minmax(180px,1.3fr) 40px;gap:8px;margin-bottom:8px}.device-links-fields>[data-add-device-link]{margin-top:4px}.resource-link{display:grid!important;grid-template-columns:24px minmax(0,1fr) 18px!important;align-items:center;gap:9px;padding:10px 0!important;color:inherit;text-decoration:none}.resource-link>ha-icon{--mdc-icon-size:19px;color:var(--primary-color)}.resource-link span{display:grid}.resource-link strong{text-align:left!important}.resource-link small{margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--secondary-text-color)}.attachment-empty{margin-top:8px}.attachment-list{display:block!important;padding:0!important;border:0!important}.attachment-item{display:grid!important;grid-template-columns:24px minmax(0,1fr) 36px!important;align-items:center;gap:8px;padding:8px 0!important;border-bottom:1px solid var(--divider-color)!important}.attachment-item:last-child{border-bottom:0!important}.attachment-item>ha-icon{--mdc-icon-size:20px;color:var(--primary-color)}.attachment-item>button:not(.danger-icon){min-width:0;text-align:left}.attachment-item strong,.attachment-item small{display:block;text-align:left!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.attachment-item small{margin-top:2px;color:var(--secondary-text-color)}
   .device-drawer{position:fixed;z-index:25;top:0;right:0;bottom:0;width:min(440px,100vw);display:flex;flex-direction:column;background:var(--card-background-color);border-left:1px solid var(--divider-color);box-shadow:-14px 0 40px #0003;transform:translateX(105%);transition:transform .2s ease}.device-drawer.open{transform:translateX(0)}.drawer-head{padding:22px 20px 18px;border-bottom:1px solid var(--divider-color);display:flex;align-items:flex-start;justify-content:space-between;gap:15px}.drawer-head h2{font-size:21px;margin:5px 0 10px}.drawer-head>button{width:38px;height:38px;display:grid;place-items:center;border-radius:8px}.drawer-head>button:hover{background:var(--secondary-background-color)}.drawer-badges{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.drawer-body{flex:1;overflow:auto;padding:14px 20px 24px}.drawer-body section{margin-bottom:14px;padding:16px;border:1px solid var(--divider-color);border-radius:12px;background:color-mix(in srgb,var(--secondary-background-color) 42%,var(--card-background-color))}.drawer-body section h3{margin-bottom:11px}.drawer-body section>div:not(.label-list){display:grid;grid-template-columns:135px minmax(0,1fr);gap:12px;padding:8px 0;border-bottom:1px solid color-mix(in srgb,var(--divider-color) 75%,transparent)}.drawer-body section>div:last-of-type{border-bottom:0}.drawer-body section span{font-size:11px;color:var(--secondary-text-color)}.drawer-body section strong{font-size:12px;text-align:right;overflow-wrap:anywhere}.drawer-body .label-list{margin-top:12px}.drawer-inline-action{width:100%;margin-top:12px;padding:9px;border-radius:8px;display:flex;align-items:center;justify-content:center;gap:7px;color:#b45309;background:#fef3c7}.drawer-warning{display:flex;align-items:flex-start;gap:6px;margin-top:10px;color:var(--error-color,#c62828);font-size:11px}.drawer-warning ha-icon{--mdc-icon-size:16px;flex:0 0 auto}.drawer-actions{padding:14px 16px;border-top:1px solid var(--divider-color);display:flex;justify-content:flex-end;gap:8px;background:var(--card-background-color)}.drawer-actions .drawer-icon-action{width:42px;padding:0;text-decoration:none}.drawer-actions .primary{flex:1}.drawer-scrim{display:none;position:fixed;z-index:24;inset:0;background:#0006}
   @media(max-width:900px){.table-scroll{max-height:calc(100vh - 390px)}.drawer-scrim.open{display:block}}
   @media(max-width:600px){.device-table{display:table}.device-table thead{display:table-header-group}.device-table tbody{display:table-row-group;padding:0}.device-table tr{display:table-row;border:0;padding:0}.device-table th,.device-table td{display:table-cell}.device-table thead{display:table-header-group}.device-table td:first-child{float:none}.table-scroll{max-height:calc(100vh - 470px)}.drawer-head{padding-top:18px}.drawer-actions .secondary:not(.drawer-icon-action){font-size:0;width:42px;padding:0}.drawer-actions .secondary ha-icon{font-size:initial}}
-  @media(max-width:600px){.battery-fields{grid-template-columns:1fr}.battery-grid{grid-template-columns:1fr}.battery-card-details>div{grid-template-columns:105px minmax(0,1fr)}.battery-card-actions{align-items:flex-start;flex-direction:column}.battery-card-actions button{width:100%}}
+  @media(max-width:600px){.battery-fields,.custom-values-fields{grid-template-columns:1fr}.custom-field-setting,.device-link-row{grid-template-columns:1fr 40px}.custom-field-setting label:first-of-type,.device-link-row input[data-link-label]{grid-column:1}.custom-field-setting label:last-of-type,.device-link-row input[data-link-url]{grid-column:1}.custom-field-setting button,.device-link-row button{grid-column:2;grid-row:1}.battery-grid{grid-template-columns:1fr}.battery-card-details>div{grid-template-columns:105px minmax(0,1fr)}.battery-card-actions{align-items:flex-start;flex-direction:column}.battery-card-actions button{width:100%}}
 `;
 
 customElements.define("network-inventory-panel", NetworkInventoryPanel);
