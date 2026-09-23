@@ -20,7 +20,7 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - Configurable brand list with automatic additions during import
 - Import and export compatible CSV files
 - Portable JSON export and restore, plus automatic backups before bulk imports
-- Field-level change history in a dedicated Logs tab
+- Compact field-level change history with safe Undo for device edits, bulk edits, and battery replacement records
 - General settings for 24/12-hour time and day-first/month-first dates
 - Network, VLAN, SSID, connected AP/switch, and switch-port fields
 - Automatic UniFi topology enrichment for devices matched by MAC address
@@ -32,7 +32,7 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - Battery entity assignment with live percentage, low-battery overview, replacement dates, and permanent replacement history
 - Searchable HA Primary entity selection with automatic, overridable battery-entity matching
 - Automatic Shelly and Reolink firmware entity matching with live installed/latest versions, update progress, and confirmed one-click OTA installation
-- Native Shelly and Reolink integration status cards with detected-device, firmware-entity, and available-update counts plus direct Home Assistant setup access
+- Native Shelly and Reolink integration status cards with company logos, detected-device, firmware-entity, and available-update counts plus direct Home Assistant setup access
 - Right-side device details panel with edit, print, UniFi, and delete actions
 - Device-count navigation badge and HACS update availability beside the installed version
 - User-defined device fields with text, number, date, URL, and checkbox types
