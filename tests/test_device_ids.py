@@ -405,6 +405,44 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.manager.data["logs"][0]["details"], "Change 10")
         self.assertEqual(self.manager.data["logs"][-1]["details"], "Change 509")
 
+    async def test_update_can_be_undone_from_log(self):
+        device = await self.manager.async_add(device_payload("Camera", "wifi"))
+        await self.manager.async_update(device["id"], {"name": "Front camera"})
+        update_log = self.manager.data["logs"][-1]
+
+        reverted = await self.manager.async_undo_log(update_log["id"])
+
+        self.assertEqual(reverted["name"], "Camera")
+        self.assertTrue(update_log["undone_by"])
+        self.assertEqual(self.manager.data["logs"][-1]["action"], "undo")
+        self.assertEqual(
+            self.manager.data["logs"][-1]["reverts_log_id"], update_log["id"]
+        )
+        with self.assertRaisesRegex(storage.InventoryError, "already been undone"):
+            await self.manager.async_undo_log(update_log["id"])
+
+    async def test_stale_log_cannot_overwrite_a_newer_change(self):
+        device = await self.manager.async_add(device_payload("Camera", "wifi"))
+        await self.manager.async_update(device["id"], {"name": "Front camera"})
+        older_log = self.manager.data["logs"][-1]
+        await self.manager.async_update(device["id"], {"name": "Garage camera"})
+
+        with self.assertRaisesRegex(storage.InventoryError, "changed after"):
+            await self.manager.async_undo_log(older_log["id"])
+
+    async def test_battery_replacement_log_is_reversible(self):
+        device = await self.manager.async_add(device_payload("Remote", "zigbee"))
+        await self.manager.async_record_battery_replacement(
+            device["id"], "2026-09-22", "CR2032"
+        )
+        replacement_log = self.manager.data["logs"][-1]
+        self.assertTrue(replacement_log["changes"])
+
+        reverted = await self.manager.async_undo_log(replacement_log["id"])
+
+        self.assertEqual(reverted["battery_last_replaced_at"], "")
+        self.assertEqual(reverted["battery_history"], [])
+
     async def test_required_fields_and_ip_validation(self):
         with self.assertRaisesRegex(storage.InventoryError, "Type"):
             await self.manager.async_add(
@@ -505,6 +543,7 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("device.config_entry_id", source)
         self.assertIn("def _battery_entities", source)
         self.assertIn("websocket_battery_replaced", source)
+        self.assertIn("websocket_undo_log", source)
         self.assertIn("def _home_assistant_entities", source)
         self.assertIn("def _primary_entity_id", source)
         self.assertIn("label_registry as lr", source)
