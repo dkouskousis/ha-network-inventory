@@ -35,6 +35,7 @@ def async_register_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_update)
     websocket_api.async_register_command(hass, websocket_battery_replaced)
     websocket_api.async_register_command(hass, websocket_bulk_update)
+    websocket_api.async_register_command(hass, websocket_undo_log)
     websocket_api.async_register_command(hass, websocket_delete)
     websocket_api.async_register_command(hass, websocket_import)
     websocket_api.async_register_command(hass, websocket_export)
@@ -291,6 +292,29 @@ async def websocket_bulk_update(
         connection.send_error(msg["id"], "invalid_bulk_update", str(err))
         return
     connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/undo_log",
+        vol.Required("log_id"): str,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_undo_log(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Undo a reversible device change from the audit log."""
+    try:
+        device = await _manager(hass).async_undo_log(msg["log_id"])
+        _push_device_labels_to_home_assistant(hass, device)
+    except InventoryError as err:
+        connection.send_error(msg["id"], "invalid_undo", str(err))
+        return
+    connection.send_result(msg["id"], device)
 
 
 @websocket_api.websocket_command(

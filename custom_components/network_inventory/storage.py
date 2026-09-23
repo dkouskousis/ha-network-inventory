@@ -390,6 +390,7 @@ class InventoryStore:
         """Record a battery replacement in the device's permanent history."""
         async with self._lock:
             device = self._find(internal_id)
+            previous = deepcopy(device)
             replacement = self._battery_history_entry(replaced_at, note)
             device.setdefault("battery_history", []).append(replacement)
             device["battery_last_replaced_at"] = replacement["replaced_at"]
@@ -397,9 +398,67 @@ class InventoryStore:
             self._record_log(
                 "battery_replaced",
                 device=device,
+                changes=self._device_changes(previous, device),
                 details=f"Battery replaced on {replacement['replaced_at']}",
                 source="battery",
             )
+            await self._store.async_save(self.data)
+            return deepcopy(device)
+
+    async def async_undo_log(self, log_id: str) -> dict[str, Any]:
+        """Safely revert a device change recorded in the audit log."""
+        async with self._lock:
+            log = next(
+                (item for item in self.data["logs"] if item.get("id") == log_id),
+                None,
+            )
+            if log is None:
+                raise InventoryError("Log entry not found")
+            if log.get("action") not in {"update", "bulk_update", "battery_replaced"}:
+                raise InventoryError("This log entry cannot be undone")
+            if log.get("undone_by"):
+                raise InventoryError("This change has already been undone")
+            changes = log.get("changes")
+            if not isinstance(changes, list) or not changes:
+                raise InventoryError("This log entry has no reversible changes")
+
+            device = self._find(str(log.get("device_id") or ""))
+            for change in changes:
+                field = str(change.get("field") or "")
+                if not field or device.get(field, "") != change.get("new", ""):
+                    raise InventoryError(
+                        "The device changed after this log entry and cannot be safely undone"
+                    )
+
+            previous = deepcopy(device)
+            payload = deepcopy(device)
+            for change in changes:
+                payload[str(change["field"])] = deepcopy(change.get("old", ""))
+            reverted = self._clean_device(payload)
+            protected = {
+                "id": device["id"],
+                "device_code": device["device_code"],
+                "created_at": device["created_at"],
+            }
+            reverted.update(protected)
+            reverted["protocol"] = self._normalise_protocol(reverted.get("protocol"))
+            reverted["updated_at"] = _now()
+            actual_changes = self._device_changes(previous, reverted)
+            if not actual_changes:
+                raise InventoryError("This log entry has no reversible changes")
+            device.clear()
+            device.update(reverted)
+            self._remember_brand(device["brand"])
+            self._remember_labels(device["labels"])
+            undo_log = self._record_log(
+                "undo",
+                device=device,
+                changes=actual_changes,
+                source="logs",
+                details=f"Reverted log {log_id}",
+                reverts_log_id=log_id,
+            )
+            log["undone_by"] = undo_log["id"]
             await self._store.async_save(self.data)
             return deepcopy(device)
 
@@ -1168,21 +1227,24 @@ class InventoryStore:
         changes: list[dict[str, Any]] | None = None,
         source: str = "manual",
         details: str = "",
-    ) -> None:
-        self.data["logs"].append(
-            {
-                "id": uuid4().hex,
-                "timestamp": _now(),
-                "action": action,
-                "source": source,
-                "device_id": str(device.get("id", "")) if device else "",
-                "device_code": device.get("device_code", "") if device else "",
-                "device_name": str(device.get("name", "")) if device else "",
-                "changes": changes or [],
-                "details": details,
-            }
-        )
+        reverts_log_id: str = "",
+    ) -> dict[str, Any]:
+        log = {
+            "id": uuid4().hex,
+            "timestamp": _now(),
+            "action": action,
+            "source": source,
+            "device_id": str(device.get("id", "")) if device else "",
+            "device_code": device.get("device_code", "") if device else "",
+            "device_name": str(device.get("name", "")) if device else "",
+            "changes": changes or [],
+            "details": details,
+        }
+        if reverts_log_id:
+            log["reverts_log_id"] = reverts_log_id
+        self.data["logs"].append(log)
         self.data["logs"] = self.data["logs"][-500:]
+        return log
 
     @staticmethod
     def _device_changes(before: dict[str, Any], after: dict[str, Any]) -> list[dict[str, Any]]:
