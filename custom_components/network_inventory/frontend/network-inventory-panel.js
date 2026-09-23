@@ -87,7 +87,10 @@ const TEXT = {
     receipt: "Receipt", addReceipt: "Attach receipt", noReceipt: "No receipt", receiptHelp: "Upload a receipt from the device details, then select it here.",
     allLogDevices: "All devices", allLogActions: "All actions", fromDate: "From", toDate: "To",
     clearLogFilters: "Clear filters", logResults: "entries", noMatchingLogs: "No logs match these filters",
-    showChanges: "Show changes"
+    showChanges: "Show changes",
+    notes: "Notes", addNote: "Add note", noteTitle: "Title (optional)", noteText: "Note", noteDevice: "Device (optional)",
+    noNoteDevice: "No device", noNotes: "No notes yet.", noteSaved: "Note saved", noteDeleted: "Note deleted",
+    confirmDeleteNote: "Delete this note and its attachments?", noteAttachment: "Attach files", noteRequired: "Enter note text."
   },
   el: {
     title: "Καταγραφή Συσκευών", overview: "Επισκόπηση", devices: "Συσκευές", newestDevices: "Νεότερες συσκευές", discover: "Discover", homeAssistant: "Home Assistant",
@@ -177,7 +180,10 @@ const TEXT = {
     receipt: "Απόδειξη", addReceipt: "Επισύναψη απόδειξης", noReceipt: "Χωρίς απόδειξη", receiptHelp: "Ανέβασε την απόδειξη από την καρτέλα της συσκευής και επίλεξέ την εδώ.",
     allLogDevices: "Όλες οι συσκευές", allLogActions: "Όλες οι ενέργειες", fromDate: "Από", toDate: "Έως",
     clearLogFilters: "Καθαρισμός φίλτρων", logResults: "εγγραφές", noMatchingLogs: "Δεν βρέθηκαν logs με αυτά τα φίλτρα",
-    showChanges: "Προβολή αλλαγών"
+    showChanges: "Προβολή αλλαγών",
+    notes: "Σημειώσεις", addNote: "Νέα σημείωση", noteTitle: "Τίτλος (προαιρετικά)", noteText: "Σημείωση", noteDevice: "Συσκευή (προαιρετικά)",
+    noNoteDevice: "Χωρίς συσκευή", noNotes: "Δεν υπάρχουν σημειώσεις ακόμη.", noteSaved: "Η σημείωση αποθηκεύτηκε", noteDeleted: "Η σημείωση διαγράφηκε",
+    confirmDeleteNote: "Να διαγραφεί η σημείωση και τα συνημμένα της;", noteAttachment: "Επισύναψη αρχείων", noteRequired: "Γράψε το κείμενο της σημείωσης."
   }
 };
 
@@ -461,6 +467,7 @@ class NetworkInventoryPanel extends HTMLElement {
       : this.view === "batteries" ? this.renderBatteries()
       : this.view === "discover" ? this.renderDiscover()
       : this.view === "integrations" ? this.renderIntegrations()
+      : this.view === "notes" ? this.renderNotes()
       : this.view === "logs" ? this.renderLogs()
       : this.renderSettings();
     this.shadowRoot.innerHTML = `
@@ -476,6 +483,7 @@ class NetworkInventoryPanel extends HTMLElement {
           ${this.nav("batteries", "mdi:battery-medium", "batteryPowered", this.batteryDevices().length)}
           ${this.nav("discover", "mdi:radar", "discover", this.data.ha_devices.length + (this.data.unifi_items?.filter(item => !item.inventory_id).length || 0))}
           ${this.nav("integrations", "mdi:connection", "integrations")}
+          ${this.nav("notes", "mdi:note-text-outline", "notes", this.data.notes?.length || null)}
           ${this.nav("logs", "mdi:history", "logs", this.data.logs?.length || null)}
           ${this.nav("settings", "mdi:cog-outline", "settings")}
         </nav>
@@ -819,6 +827,15 @@ class NetworkInventoryPanel extends HTMLElement {
       }).join("")}</section>${items.length ? "" : `<div class="empty standalone"><ha-icon icon="mdi:lan-disconnect"></ha-icon><p>${this.t("noUnifi")}</p></div>`}`;
   }
 
+  renderNotes() {
+    const notes = [...(this.data.notes || [])].sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return `<section class="section-head"><div><h2>${this.t("notes")}</h2><p>${notes.length}</p></div><button class="primary" data-add-note><ha-icon icon="mdi:plus"></ha-icon>${this.t("addNote")}</button></section>
+      <section class="notes-list">${notes.map(note => {
+        const device = this.data.devices.find(item => item.id === note.device_id);
+        return `<article class="card note-card"><div class="note-header"><div><h3>${esc(note.title || this.t("notes"))}</h3><small>${this.t("createdAt")}: ${esc(this.formatDate(note.created_at))}</small></div><div class="card-actions"><button class="secondary compact" data-edit-note="${esc(note.id)}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${this.t("edit")}</button><button class="secondary compact" data-delete-note="${esc(note.id)}"><ha-icon icon="mdi:delete-outline"></ha-icon>${this.t("delete")}</button></div></div><p class="note-body">${esc(note.body)}</p><div class="note-meta">${device ? `<span><ha-icon icon="mdi:devices"></ha-icon>#${esc(device.device_code)} · ${esc(device.name)}</span>` : ""}${this.labelChips(note.labels)}</div>${note.attachments?.length ? `<div class="note-files">${note.attachments.map(file => `<button class="secondary compact" data-note-download="${esc(note.id)}" data-file-id="${esc(file.id)}"><ha-icon icon="mdi:paperclip"></ha-icon>${esc(file.name)}</button>`).join("")}</div>` : ""}</article>`;
+      }).join("")}</section>${notes.length ? "" : `<div class="empty standalone"><ha-icon icon="mdi:note-text-outline"></ha-icon><p>${this.t("noNotes")}</p></div>`}`;
+  }
+
   renderLogs() {
     const logs = [...(this.data.logs || [])].reverse();
     const actionLabel = action => ({ add: this.t("addDevice"), update: this.t("edit"), bulk_update: this.t("bulkEdit"), battery_replaced: this.t("recordReplacement"), attachment_add: this.t("attachmentAdded"), attachment_delete: this.t("attachmentDeleted"), delete: this.t("delete"), import: this.t("import"), restore: this.t("restore"), settings: this.t("settings"), undo: this.t("undo") }[action] || action);
@@ -938,6 +955,10 @@ class NetworkInventoryPanel extends HTMLElement {
       this.render();
     }));
     this.shadowRoot.querySelectorAll("[data-action='add']").forEach(button => button.addEventListener("click", () => this.openDeviceModal()));
+    this.shadowRoot.querySelector("[data-add-note]")?.addEventListener("click", () => this.openNoteModal());
+    this.shadowRoot.querySelectorAll("[data-edit-note]").forEach(button => button.addEventListener("click", () => this.openNoteModal(this.data.notes.find(note => note.id === button.dataset.editNote))));
+    this.shadowRoot.querySelectorAll("[data-delete-note]").forEach(button => button.addEventListener("click", () => this.deleteNote(button.dataset.deleteNote)));
+    this.shadowRoot.querySelectorAll("[data-note-download]").forEach(button => button.addEventListener("click", () => this.downloadNoteAttachment(button.dataset.noteDownload, button.dataset.fileId)));
     this.shadowRoot.querySelectorAll("[data-edit]").forEach(button => button.addEventListener("click", () => {
       if (button.closest("#device-drawer")) return;
       const device = this.data.devices.find(item => item.id === button.dataset.edit); if (device) this.openDeviceModal(device);
@@ -1696,6 +1717,67 @@ class NetworkInventoryPanel extends HTMLElement {
     } catch (error) { this.toast(error?.message || this.t("error"), true); }
   }
 
+  openNoteModal(note = null) {
+    const modal = this.shadowRoot.querySelector("#modal");
+    const deviceOptions = [...this.data.devices].sort((a, b) => a.name.localeCompare(b.name)).map(device => `<option value="${esc(device.id)}" ${note?.device_id === device.id ? "selected" : ""}>#${esc(device.device_code)} · ${esc(device.name)}</option>`).join("");
+    const labelOptions = (this.data.labels || []).map(label => `<label><input type="checkbox" name="labels" value="${esc(label)}" ${(note?.labels || []).includes(label) ? "checked" : ""}>${esc(label)}</label>`).join("");
+    modal.innerHTML = `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><h2>${this.t(note ? "edit" : "addNote")}</h2><button type="button" data-close><ha-icon icon="mdi:close"></ha-icon></button></div><form id="note-form"><div class="form-grid"><label class="full">${this.t("noteTitle")}<input name="title" maxlength="200" value="${esc(note?.title || "")}"></label><label class="full">${this.t("noteText")}<textarea name="body" rows="7" maxlength="20000" required>${esc(note?.body || "")}</textarea></label><label class="full">${this.t("noteDevice")}<select name="device_id"><option value="">${this.t("noNoteDevice")}</option>${deviceOptions}</select></label><div class="full"><span>${this.t("labels")}</span><div class="note-label-picker">${labelOptions}</div></div><label class="full">${this.t("noteAttachment")}<input name="files" type="file" multiple></label>${note?.attachments?.length ? `<div class="full note-existing-files">${note.attachments.map(file => `<span><button type="button" class="secondary compact" data-modal-note-download="${esc(file.id)}">${esc(file.name)}</button><button type="button" class="danger-icon" data-modal-note-delete="${esc(file.id)}" title="${this.t("deleteAttachment")}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></span>`).join("")}</div>` : ""}</div><div class="modal-actions"><button type="button" class="secondary" data-close>${this.t("cancel")}</button><button type="submit" class="primary">${this.t("save")}</button></div></form></section></div>`;
+    modal.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", () => modal.innerHTML = ""));
+    modal.querySelectorAll("[data-modal-note-download]").forEach(button => button.addEventListener("click", () => this.downloadNoteAttachment(note.id, button.dataset.modalNoteDownload)));
+    modal.querySelectorAll("[data-modal-note-delete]").forEach(button => button.addEventListener("click", () => this.deleteNoteAttachment(note.id, button.dataset.modalNoteDelete)));
+    modal.querySelector("#note-form").addEventListener("submit", event => this.saveNote(event, note));
+  }
+
+  async saveNote(event, existing) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!form.elements.body.value.trim()) return this.toast(this.t("noteRequired"), true);
+    const files = [...form.elements.files.files];
+    if (files.some(file => file.size > 10 * 1024 * 1024)) return this.toast(this.t("attachmentTooLarge"), true);
+    this.setBusy(form, true);
+    try {
+      const note = await this._hass.callWS({ type: "network_inventory/note/save", note_id: existing?.id || "", note: {
+        title: form.elements.title.value, body: form.elements.body.value, device_id: form.elements.device_id.value,
+        labels: [...form.querySelectorAll('[name="labels"]:checked')].map(input => input.value)
+      } });
+      for (const file of files) {
+        const body = new FormData(); body.append("file", file);
+        const response = await this._hass.fetchWithAuth(`/api/network_inventory/notes/${encodeURIComponent(note.id)}/attachments`, { method: "POST", body });
+        if (!response.ok) throw new Error(await this.apiError(response));
+      }
+      await this.reload(this.t("noteSaved"));
+    } catch (error) { this.setBusy(form, false); this.toast(error?.message || this.t("error"), true); }
+  }
+
+  async deleteNote(noteId) {
+    if (!confirm(this.t("confirmDeleteNote"))) return;
+    try {
+      await this._hass.callWS({ type: "network_inventory/note/delete", note_id: noteId });
+      await this.reload(this.t("noteDeleted"));
+    } catch (error) { this.toast(error?.message || this.t("error"), true); }
+  }
+
+  async downloadNoteAttachment(noteId, fileId) {
+    const file = this.data.notes.find(note => note.id === noteId)?.attachments.find(item => item.id === fileId);
+    if (!file) return;
+    try {
+      const response = await this._hass.fetchWithAuth(`/api/network_inventory/notes/${encodeURIComponent(noteId)}/attachments/${encodeURIComponent(fileId)}`);
+      if (!response.ok) throw new Error(await this.apiError(response));
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(await response.blob()); link.download = file.name; link.click(); URL.revokeObjectURL(link.href);
+    } catch (error) { this.toast(error?.message || this.t("error"), true); }
+  }
+
+  async deleteNoteAttachment(noteId, fileId) {
+    if (!confirm(this.t("confirmDeleteAttachment"))) return;
+    try {
+      const response = await this._hass.fetchWithAuth(`/api/network_inventory/notes/${encodeURIComponent(noteId)}/attachments/${encodeURIComponent(fileId)}`, { method: "DELETE" });
+      if (!response.ok) throw new Error(await this.apiError(response));
+      await this.reload(this.t("attachmentDeleted"));
+      this.openNoteModal(this.data.notes.find(note => note.id === noteId));
+    } catch (error) { this.toast(error?.message || this.t("error"), true); }
+  }
+
   async uploadAttachments(deviceId, files, isReceipt = false) {
     if (!deviceId || !files.length) return;
     if (files.some(file => file.size > 10 * 1024 * 1024)) return this.toast(this.t("attachmentTooLarge"), true);
@@ -1860,6 +1942,7 @@ function csvToDevices(text) {
 }
 
 const BASE_CSS = `
+  .notes-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,350px),1fr));gap:14px}.note-card{padding:18px;min-width:0}.note-header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.note-header h3{margin:0 0 5px;font-size:16px}.note-header small{color:var(--secondary-text-color)}.note-header .card-actions{display:flex;gap:6px;flex-wrap:wrap}.note-body{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;margin:18px 0}.note-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.note-meta>span{display:inline-flex;align-items:center;gap:4px;color:var(--secondary-text-color);font-size:12px}.note-meta ha-icon,.note-files ha-icon{--mdc-icon-size:16px}.note-files{display:flex;gap:7px;flex-wrap:wrap;margin-top:14px;border-top:1px solid var(--divider-color);padding-top:13px}.note-files button{max-width:100%;overflow-wrap:anywhere}.note-label-picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(125px,1fr));gap:8px;margin-top:9px}.note-label-picker label{display:flex;gap:7px;align-items:center}.note-label-picker input{width:auto}.note-existing-files{display:grid;gap:8px}.note-existing-files span{display:flex;gap:5px;align-items:center}
   .integration-gap{margin-top:14px}.niimbot-logo{background:#f3e8ff!important;color:#7e22ce!important}.niimbot-form{max-width:none;flex-wrap:wrap}.niimbot-form label:first-child{min-width:230px}.niimbot-form label:not(:first-child){max-width:145px}
   :host{display:block;min-height:100%;background:var(--primary-background-color);color:var(--primary-text-color);font-family:var(--paper-font-body1_-_font-family,system-ui,sans-serif)}
   *{box-sizing:border-box}button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer}.app{max-width:none;margin:auto;padding:24px 28px 60px}header{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}h1{font-size:28px;margin:0 0 3px;letter-spacing:-.4px}h2{font-size:18px;margin:0 0 18px}h3{font-size:15px;margin:0 0 5px}p{margin:0}header p,.section-head p,.muted{color:var(--secondary-text-color);font-size:13px}
