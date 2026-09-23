@@ -421,6 +421,39 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(storage.InventoryError, "already been undone"):
             await self.manager.async_undo_log(update_log["id"])
 
+    async def test_purchase_details_and_receipt_survive_restore(self):
+        device = await self.manager.async_add(device_payload(
+            "Router", "wifi", purchase_date="2026-01-10", purchase_store="Local shop",
+            serial_number="SN-001", warranty_end_date="2028-01-10",
+        ))
+        attachment = await self.manager.async_add_attachment(device["id"], {
+            "id": "receipt-1", "name": "receipt.pdf", "stored_name": "receipt-1.pdf",
+            "content_type": "application/pdf", "size": 8,
+        })
+        changed = await self.manager.async_update(
+            device["id"], {"receipt_attachment_id": attachment["id"]}
+        )
+        self.assertEqual(changed["receipt_attachment_id"], "receipt-1")
+        self.assertEqual(changed["purchase_date"], "2026-01-10")
+        self.assertEqual(changed["warranty_end_date"], "2028-01-10")
+
+        snapshot = await self.manager.async_export()
+        restored = storage.InventoryStore(None)
+        await restored.async_load()
+        await restored.async_restore(snapshot)
+        self.assertEqual(restored.data["devices"][0]["serial_number"], "SN-001")
+        self.assertEqual(restored.data["devices"][0]["receipt_attachment_id"], "receipt-1")
+
+        await self.manager.async_remove_attachment(device["id"], "receipt-1")
+        self.assertEqual(self.manager.data["devices"][0]["receipt_attachment_id"], "")
+
+    async def test_receipt_must_belong_to_device_and_dates_must_be_valid(self):
+        device = await self.manager.async_add(device_payload("Router", "wifi"))
+        with self.assertRaisesRegex(storage.InventoryError, "Receipt must be"):
+            await self.manager.async_update(device["id"], {"receipt_attachment_id": "missing"})
+        with self.assertRaisesRegex(storage.InventoryError, "Purchase date"):
+            await self.manager.async_update(device["id"], {"purchase_date": "10/01/2026"})
+
     async def test_stale_log_cannot_overwrite_a_newer_change(self):
         device = await self.manager.async_add(device_payload("Camera", "wifi"))
         await self.manager.async_update(device["id"], {"name": "Front camera"})
