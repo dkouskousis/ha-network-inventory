@@ -31,6 +31,8 @@ def async_register_views(hass: HomeAssistant) -> None:
     """Register authenticated file and backup views."""
     hass.http.register_view(NetworkInventoryAttachmentCollectionView)
     hass.http.register_view(NetworkInventoryAttachmentView)
+    hass.http.register_view(NetworkInventoryNoteAttachmentsView)
+    hass.http.register_view(NetworkInventoryNoteAttachmentView)
     hass.http.register_view(NetworkInventoryFullBackupView)
     hass.http.register_view(NetworkInventoryFullRestoreView)
 
@@ -142,6 +144,72 @@ class NetworkInventoryAttachmentView(HomeAssistantView):
         except InventoryError as err:
             return web.json_response({"error": str(err)}, status=404)
         target = _manager(request).attachments_dir / device_id / attachment["stored_name"]
+        await asyncio.to_thread(target.unlink, missing_ok=True)
+        return web.json_response({"deleted": True})
+
+
+class NetworkInventoryNoteAttachmentsView(HomeAssistantView):
+    """Upload an attachment to a note."""
+
+    url = "/api/network_inventory/notes/{note_id}/attachments"
+    name = "api:network_inventory:note_attachments"
+    requires_auth = True
+
+    async def post(self, request: web.Request, note_id: str) -> web.Response:
+        _require_admin(request)
+        manager = _manager(request)
+        try:
+            await manager.async_get_note(note_id)
+            name, content_type, content = await _uploaded_file(request, MAX_ATTACHMENT_SIZE)
+            attachment_id = uuid4().hex
+            stored_name = stored_attachment_name(attachment_id, name)
+            target_dir = manager.attachments_dir / f"note-{note_id}"
+            target = target_dir / stored_name
+            await asyncio.to_thread(target_dir.mkdir, parents=True, exist_ok=True)
+            await asyncio.to_thread(target.write_bytes, content)
+            try:
+                attachment = await manager.async_add_note_attachment(note_id, {
+                    "id": attachment_id, "name": name, "stored_name": stored_name,
+                    "content_type": content_type, "size": len(content),
+                })
+            except Exception:
+                await asyncio.to_thread(target.unlink, missing_ok=True)
+                raise
+        except InventoryError as err:
+            return web.json_response({"error": str(err)}, status=400)
+        return web.json_response(attachment)
+
+
+class NetworkInventoryNoteAttachmentView(HomeAssistantView):
+    """Download or delete a note attachment."""
+
+    url = "/api/network_inventory/notes/{note_id}/attachments/{attachment_id}"
+    name = "api:network_inventory:note_attachment"
+    requires_auth = True
+
+    async def get(self, request: web.Request, note_id: str, attachment_id: str) -> web.StreamResponse:
+        _require_admin(request)
+        try:
+            note = await _manager(request).async_get_note(note_id)
+            attachment = _find_attachment(note, attachment_id)
+        except InventoryError as err:
+            raise web.HTTPNotFound(text=str(err)) from err
+        target = _manager(request).attachments_dir / f"note-{note_id}" / attachment["stored_name"]
+        if not target.is_file():
+            raise web.HTTPNotFound(text="Attachment file not found")
+        response = web.FileResponse(target)
+        response.content_type = attachment["content_type"]
+        response.headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(attachment['name'])}"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
+    async def delete(self, request: web.Request, note_id: str, attachment_id: str) -> web.Response:
+        _require_admin(request)
+        try:
+            attachment = await _manager(request).async_remove_note_attachment(note_id, attachment_id)
+        except InventoryError as err:
+            return web.json_response({"error": str(err)}, status=404)
+        target = _manager(request).attachments_dir / f"note-{note_id}" / attachment["stored_name"]
         await asyncio.to_thread(target.unlink, missing_ok=True)
         return web.json_response({"deleted": True})
 

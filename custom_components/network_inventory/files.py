@@ -33,9 +33,14 @@ def build_full_backup(payload: dict[str, Any], attachments_dir: Path) -> bytes:
             "inventory.json",
             json.dumps(payload, ensure_ascii=False, indent=2),
         )
-        for device in payload.get("data", {}).get("devices", []):
-            device_id = _safe_component(device.get("id", ""))
-            for attachment in device.get("attachments", []):
+        data = payload.get("data", {})
+        if any(not isinstance(device, dict) for device in data.get("devices", [])):
+            raise InventoryError("The ZIP backup contains invalid device data")
+        owners = [(device.get("id", ""), device) for device in data.get("devices", [])]
+        owners.extend((f"note-{note.get('id', '')}", note) for note in data.get("notes", []))
+        for owner_id, owner in owners:
+            device_id = _safe_component(owner_id)
+            for attachment in owner.get("attachments", []):
                 stored_name = _safe_component(attachment.get("stored_name", ""))
                 if not device_id or not stored_name:
                     continue
@@ -85,11 +90,19 @@ def parse_full_backup(data: bytes) -> tuple[dict[str, Any], dict[str, bytes]]:
         raise InventoryError("Invalid Network Inventory ZIP backup") from err
 
     declared: set[str] = set()
-    for device in payload.get("data", {}).get("devices", []):
-        if not isinstance(device, dict):
-            raise InventoryError("The ZIP backup contains invalid device data")
-        device_id = _safe_component(device.get("id", ""))
-        attachments = device.get("attachments", [])
+    data = payload.get("data", {})
+    if any(not isinstance(device, dict) for device in data.get("devices", [])):
+        raise InventoryError("The ZIP backup contains invalid device data")
+    owners = [(device.get("id", ""), device) for device in data.get("devices", [])]
+    notes = data.get("notes", [])
+    if not isinstance(notes, list) or any(not isinstance(note, dict) for note in notes):
+        raise InventoryError("The ZIP backup contains invalid notes")
+    owners.extend((f"note-{note.get('id', '')}", note) for note in notes)
+    for owner_id, owner in owners:
+        if not isinstance(owner, dict):
+            raise InventoryError("The ZIP backup contains invalid attachment owner")
+        device_id = _safe_component(owner_id)
+        attachments = owner.get("attachments", [])
         if not isinstance(attachments, list):
             raise InventoryError("The ZIP backup contains invalid attachment data")
         for attachment in attachments:

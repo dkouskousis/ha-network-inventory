@@ -47,6 +47,34 @@ def async_register_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_unifi_refresh)
     websocket_api.async_register_command(hass, websocket_niimbot_configure)
     websocket_api.async_register_command(hass, websocket_niimbot_print)
+    websocket_api.async_register_command(hass, websocket_note_save)
+    websocket_api.async_register_command(hass, websocket_note_delete)
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/note/save", vol.Required("note"): dict, vol.Optional("note_id", default=""): str})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_note_save(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Create or update a note."""
+    try:
+        note = await _manager(hass).async_save_note(msg["note"], msg["note_id"])
+    except InventoryError as err:
+        connection.send_error(msg["id"], "invalid_note", str(err))
+        return
+    connection.send_result(msg["id"], note)
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/note/delete", vol.Required("note_id"): str})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_note_delete(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Remove a note and its files."""
+    try:
+        await _manager(hass).async_delete_note(msg["note_id"])
+    except InventoryError as err:
+        connection.send_error(msg["id"], "invalid_note", str(err))
+        return
+    connection.send_result(msg["id"], {"deleted": True})
 
 
 def _manager(hass: HomeAssistant) -> InventoryStore:

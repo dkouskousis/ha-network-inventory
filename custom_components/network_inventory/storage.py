@@ -83,6 +83,7 @@ class InventoryStore:
             "brands": [],
             "labels": list(DEFAULT_LABELS),
             "logs": [],
+            "notes": [],
             "backups": [],
             "counters": {
                 key: value["start"] - 1 for key, value in DEFAULT_PROTOCOLS.items()
@@ -97,6 +98,9 @@ class InventoryStore:
         else:
             self.data.pop("tags", None)
         self.data.setdefault("logs", [])
+        if "notes" not in self.data:
+            self.data["notes"] = []
+            migrated = True
         self.data.setdefault("backups", [])
         if "custom_fields" not in self.data:
             self.data["custom_fields"] = []
@@ -195,6 +199,7 @@ class InventoryStore:
             device["links"] = cleaned_links
             device["custom_values"] = cleaned_values
             device["attachments"] = cleaned_attachments
+        self.data["notes"] = [self._clean_note(note) for note in self.data["notes"]]
         if migrated:
             await self._store.async_save(self.data)
 
@@ -224,6 +229,13 @@ class InventoryStore:
             if self.data["labels"] != cleaned_labels:
                 self.data["labels"] = cleaned_labels
                 changed = True
+            available_labels = {label.casefold() for label in cleaned_labels}
+            for note in self.data["notes"]:
+                retained = [label for label in note["labels"] if label.casefold() in available_labels]
+                if retained != note["labels"]:
+                    note["labels"] = retained
+                    note["updated_at"] = _now()
+                    changed = True
             for device in self.data["devices"]:
                 if device["id"] not in device_labels:
                     continue
@@ -555,6 +567,10 @@ class InventoryStore:
         """Delete a device. Its numeric code remains consumed."""
         async with self._lock:
             device = self._find(internal_id)
+            for note in self.data["notes"]:
+                if note["device_id"] == internal_id:
+                    note["device_id"] = ""
+                    note["updated_at"] = _now()
             self._record_log("delete", device=device, changes=self._device_changes(device, {}))
             self.data["devices"].remove(device)
             await self._store.async_save(self.data)
@@ -566,6 +582,92 @@ class InventoryStore:
         """Return one stored device."""
         async with self._lock:
             return deepcopy(self._find(internal_id))
+
+    def _find_note(self, note_id: str) -> dict[str, Any]:
+        for note in self.data["notes"]:
+            if note["id"] == note_id:
+                return note
+        raise InventoryError("Note not found")
+
+    def _clean_note(self, note: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(note, dict):
+            raise InventoryError("Invalid note")
+        body = str(note.get("body", "")).strip()
+        if not body or len(body) > 20000:
+            raise InventoryError("Note text is required (up to 20000 characters)")
+        device_id = str(note.get("device_id", "")).strip()
+        if device_id and not any(device["id"] == device_id for device in self.data["devices"]):
+            raise InventoryError("Device not found")
+        labels = note.get("labels", [])
+        if not isinstance(labels, list):
+            raise InventoryError("Labels must be a list")
+        available = {label.casefold(): label for label in self.data["labels"]}
+        if any(str(label).casefold() not in available for label in labels):
+            raise InventoryError("Choose existing labels")
+        note_id = str(note.get("id", "")).strip()
+        if note_id and (len(note_id) > 64 or not all(char.isalnum() or char in "-_" for char in note_id)):
+            raise InventoryError("Invalid note ID")
+        return {
+            "id": note_id or uuid4().hex,
+            "title": str(note.get("title", "")).strip()[:200],
+            "body": body,
+            "device_id": device_id,
+            "labels": sorted({available[str(label).casefold()] for label in labels}, key=str.casefold),
+            "attachments": self._clean_attachments(note.get("attachments", [])),
+            "created_at": str(note.get("created_at") or _now()),
+            "updated_at": str(note.get("updated_at") or _now()),
+        }
+
+    async def async_save_note(self, payload: dict[str, Any], note_id: str = "") -> dict[str, Any]:
+        async with self._lock:
+            previous = self._find_note(note_id) if note_id else None
+            candidate = {**previous, **payload} if previous else {**payload, "id": "", "created_at": "", "updated_at": ""}
+            cleaned = self._clean_note(candidate)
+            if previous:
+                cleaned["id"] = previous["id"]
+                cleaned["created_at"] = previous["created_at"]
+                cleaned["attachments"] = previous["attachments"]
+                cleaned["updated_at"] = _now()
+                previous.update(cleaned)
+            else:
+                cleaned["attachments"] = []
+                self.data["notes"].append(cleaned)
+            await self._store.async_save(self.data)
+            return deepcopy(cleaned)
+
+    async def async_delete_note(self, note_id: str) -> None:
+        async with self._lock:
+            note = self._find_note(note_id)
+            self.data["notes"].remove(note)
+            await self._store.async_save(self.data)
+        if self.attachments_dir is not None:
+            await asyncio.to_thread(shutil.rmtree, self.attachments_dir / f"note-{note_id}", True)
+
+    async def async_get_note(self, note_id: str) -> dict[str, Any]:
+        async with self._lock:
+            return deepcopy(self._find_note(note_id))
+
+    async def async_add_note_attachment(self, note_id: str, attachment: dict[str, Any]) -> dict[str, Any]:
+        async with self._lock:
+            note = self._find_note(note_id)
+            if len(note["attachments"]) >= 100:
+                raise InventoryError("A note can have up to 100 attachments")
+            cleaned = self._clean_attachments([attachment])[0]
+            note["attachments"].append(cleaned)
+            note["updated_at"] = _now()
+            await self._store.async_save(self.data)
+            return deepcopy(cleaned)
+
+    async def async_remove_note_attachment(self, note_id: str, attachment_id: str) -> dict[str, Any]:
+        async with self._lock:
+            note = self._find_note(note_id)
+            attachment = next((item for item in note["attachments"] if item["id"] == attachment_id), None)
+            if attachment is None:
+                raise InventoryError("Attachment not found")
+            note["attachments"].remove(attachment)
+            note["updated_at"] = _now()
+            await self._store.async_save(self.data)
+            return deepcopy(attachment)
 
     async def async_add_attachment(
         self, internal_id: str, attachment: dict[str, Any]
@@ -768,6 +870,7 @@ class InventoryStore:
                 if str(item).strip()
             }
             labels.update(label for device in self.data["devices"] for label in device.get("labels", []))
+            labels.update(label for note in self.data["notes"] for label in note.get("labels", []))
 
             custom_fields = self._clean_custom_fields(
                 payload.get("custom_fields", self.data["custom_fields"])
@@ -1181,6 +1284,7 @@ class InventoryStore:
         else:
             candidate.pop("tags", None)
         candidate.setdefault("logs", [])
+        candidate.setdefault("notes", [])
         candidate.setdefault("custom_fields", [])
         candidate["custom_fields"] = self._clean_custom_fields(
             candidate["custom_fields"]
@@ -1230,6 +1334,13 @@ class InventoryStore:
                 cleaned_devices.append(cleaned)
                 codes.add(code)
             candidate["devices"] = cleaned_devices
+            if not isinstance(candidate["notes"], list):
+                raise InventoryError("Invalid notes in backup")
+            if any(not isinstance(note, dict) or not note.get("id") for note in candidate["notes"]):
+                raise InventoryError("Invalid note ID in backup")
+            candidate["notes"] = [self._clean_note(note) for note in candidate["notes"]]
+            if len({note["id"] for note in candidate["notes"]}) != len(candidate["notes"]):
+                raise InventoryError("Duplicate note IDs in backup")
             candidate["logs"] = [item for item in candidate["logs"] if isinstance(item, dict)][-500:]
             candidate["labels"] = sorted({str(item).strip()[:60] for item in candidate["labels"] if str(item).strip()}, key=str.casefold)
             candidate["brands"] = sorted({str(item).strip()[:100] for item in candidate["brands"] if str(item).strip()}, key=str.casefold)
