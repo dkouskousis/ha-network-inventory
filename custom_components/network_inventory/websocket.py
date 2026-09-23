@@ -826,6 +826,7 @@ def _native_integration_device_count(hass: HomeAssistant, domain: str) -> int:
             count += 1
     return count
 
+
 @callback
 def _home_assistant_devices(
     hass: HomeAssistant, inventory_devices: list[dict[str, Any]]
