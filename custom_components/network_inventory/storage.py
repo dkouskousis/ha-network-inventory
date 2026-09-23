@@ -45,7 +45,7 @@ def common_entity_name(entity_ids: list[str]) -> str:
     return "_".join(common)
 
 
-def _clean_general_settings(value: Any) -> dict[str, str]:
+def _clean_general_settings(value: Any) -> dict[str, Any]:
     """Validate regional display preferences."""
     if not isinstance(value, dict):
         raise InventoryError("General settings must be an object")
@@ -55,7 +55,13 @@ def _clean_general_settings(value: Any) -> dict[str, str]:
         raise InventoryError("Time format must be 24h or 12h")
     if date_format not in {"day_first", "month_first"}:
         raise InventoryError("Date format must be day first or month first")
-    return {"time_format": time_format, "date_format": date_format}
+    language = str(value.get("language", "auto"))
+    if language not in {"auto", "en", "el", "de", "fr"}:
+        raise InventoryError("Unsupported language")
+    log_limit = value.get("log_limit", 500)
+    if isinstance(log_limit, bool) or log_limit not in {100, 250, 500, 1000, 2000}:
+        raise InventoryError("Log limit must be 100, 250, 500, 1000 or 2000")
+    return {"time_format": time_format, "date_format": date_format, "language": language, "log_limit": log_limit}
 
 
 class InventoryStore:
@@ -116,8 +122,9 @@ class InventoryStore:
         self.data["general"] = _clean_general_settings(self.data["general"])
         if previous_general != self.data["general"]:
             migrated = True
-        if len(self.data["logs"]) > 500:
-            self.data["logs"] = self.data["logs"][-500:]
+        log_limit = self.data["general"]["log_limit"]
+        if len(self.data["logs"]) > log_limit:
+            self.data["logs"] = self.data["logs"][-log_limit:]
             migrated = True
         self.data.setdefault(
             "niimbot",
@@ -127,6 +134,8 @@ class InventoryStore:
         self.data["niimbot"].setdefault("label_height_mm", 15)
         self.data["niimbot"].setdefault("margin_mm", 1.5)
         self.data["niimbot"].setdefault("top_margin_mm", 2)
+        self.data["niimbot"].setdefault("layout", "full")
+        self.data["niimbot"].setdefault("print_fields", ["name", "id", "protocol", "mac"])
         if self.data.get("device_types_version", 0) < DEVICE_TYPES_VERSION:
             current_types = {item.casefold() for item in self.data["device_types"]}
             self.data["device_types"].extend(
@@ -318,15 +327,25 @@ class InventoryStore:
         label_height_mm: float,
         margin_mm: float,
         top_margin_mm: float,
+        layout: str = "full",
+        print_fields: list[str] | None = None,
     ) -> dict[str, Any]:
         """Save the Home Assistant device used for label printing."""
         async with self._lock:
+            if print_fields is None:
+                print_fields = ["name", "id", "protocol", "mac"]
+            if layout not in {"full", "compact", "custom"}:
+                raise InventoryError("Invalid label layout")
+            if not isinstance(print_fields, list) or not print_fields or len(print_fields) > 5 or set(print_fields) - {"name", "id", "protocol", "mac", "area"}:
+                raise InventoryError("Select label fields")
             self.data["niimbot"] = {
                 "device_id": str(device_id).strip(),
                 "label_width_mm": label_width_mm,
                 "label_height_mm": label_height_mm,
                 "margin_mm": margin_mm,
                 "top_margin_mm": top_margin_mm,
+                "layout": layout,
+                "print_fields": list(dict.fromkeys(print_fields)),
             }
             await self._store.async_save(self.data)
             return deepcopy(self.data["niimbot"])
@@ -889,6 +908,7 @@ class InventoryStore:
             }
 
             self.data["general"] = general
+            self.data["logs"] = self.data["logs"][-general["log_limit"]:]
             self.data["protocols"] = cleaned
             self.data["device_types"] = device_types
             self.data["brands"] = sorted(brands, key=str.casefold)
@@ -1297,6 +1317,8 @@ class InventoryStore:
             "niimbot",
             {"device_id": "", "label_width_mm": 30, "label_height_mm": 15, "margin_mm": 1.5, "top_margin_mm": 2},
         )
+        candidate["niimbot"].setdefault("layout", "full")
+        candidate["niimbot"].setdefault("print_fields", ["name", "id", "protocol", "mac"])
         candidate["backups"] = []
         old_data = self.data
         self.data = candidate
@@ -1341,7 +1363,7 @@ class InventoryStore:
             candidate["notes"] = [self._clean_note(note) for note in candidate["notes"]]
             if len({note["id"] for note in candidate["notes"]}) != len(candidate["notes"]):
                 raise InventoryError("Duplicate note IDs in backup")
-            candidate["logs"] = [item for item in candidate["logs"] if isinstance(item, dict)][-500:]
+            candidate["logs"] = [item for item in candidate["logs"] if isinstance(item, dict)][-candidate["general"]["log_limit"]:]
             candidate["labels"] = sorted({str(item).strip()[:60] for item in candidate["labels"] if str(item).strip()}, key=str.casefold)
             candidate["brands"] = sorted({str(item).strip()[:100] for item in candidate["brands"] if str(item).strip()}, key=str.casefold)
             for key, config in protocols.items():
@@ -1375,7 +1397,7 @@ class InventoryStore:
         if reverts_log_id:
             log["reverts_log_id"] = reverts_log_id
         self.data["logs"].append(log)
-        self.data["logs"] = self.data["logs"][-500:]
+        self.data["logs"] = self.data["logs"][-self.data["general"]["log_limit"]:]
         return log
 
     @staticmethod

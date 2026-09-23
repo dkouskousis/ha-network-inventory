@@ -117,6 +117,8 @@ def _niimbot_status(
         "label_height_mm": settings.get("label_height_mm", 15),
         "margin_mm": settings.get("margin_mm", 1.5),
         "top_margin_mm": settings.get("top_margin_mm", 2),
+        "layout": settings.get("layout", "full"),
+        "print_fields": settings.get("print_fields", ["name", "id", "protocol", "mac"]),
         "connected": bool(selected and any(item["device_id"] == selected for item in printers)),
     }
 
@@ -516,6 +518,8 @@ async def websocket_unifi_refresh(
         vol.Required("label_height_mm"): vol.Coerce(float),
         vol.Required("margin_mm"): vol.Coerce(float),
         vol.Required("top_margin_mm"): vol.Coerce(float),
+        vol.Required("layout"): vol.In(["full", "compact", "custom"]),
+        vol.Required("print_fields"): [vol.In(["name", "id", "protocol", "mac", "area"])],
     }
 )
 @websocket_api.require_admin
@@ -543,8 +547,11 @@ async def websocket_niimbot_configure(
     if not 0.5 <= top_margin <= 4 or top_margin + margin >= height:
         connection.send_error(msg["id"], "niimbot_error", "Top margin must be between 0.5 and 4 mm")
         return
+    if not msg["print_fields"]:
+        connection.send_error(msg["id"], "niimbot_error", "Select at least one label field")
+        return
     result = await _manager(hass).async_save_niimbot(
-        msg["device_id"], width, height, margin, top_margin
+        msg["device_id"], width, height, margin, top_margin, msg["layout"], msg["print_fields"]
     )
     connection.send_result(msg["id"], result)
 
@@ -594,8 +601,7 @@ async def websocket_niimbot_print(
     protocol = data["protocols"].get(device["protocol"], {}).get(
         "label", device["protocol"]
     )
-    service_data = {
-        "payload": [
+    full_payload = [
             {
                 "type": "new_multiline",
                 "value": device["name"],
@@ -620,7 +626,39 @@ async def websocket_niimbot_print(
                 "y": content_y + name_height + detail_height,
                 "size": 25,
             },
-        ],
+        ]
+    layout = settings.get("layout", "full")
+    if layout == "full":
+        payload = full_payload
+    else:
+        values = {
+            "name": device["name"],
+            "id": f"ID {device['device_code']}",
+            "protocol": protocol,
+            "mac": device["mac"],
+            "area": device["area"],
+        }
+        fields = ["name", "id"] if layout == "compact" else settings.get("print_fields", [])
+        lines = [str(values[field]) for field in fields if field in values and values[field]]
+        if not lines:
+            connection.send_error(msg["id"], "niimbot_error", "No label content to print")
+            return
+        line_height = content_height // len(lines)
+        payload = [
+            {
+                "type": "new_multiline",
+                "value": line,
+                "x": margin,
+                "y": content_y + index * line_height,
+                "width": content_width,
+                "height": line_height,
+                "size": 38 if index == 0 else 27,
+                "fit": True,
+            }
+            for index, line in enumerate(lines)
+        ]
+    service_data = {
+        "payload": payload,
         "rotate": 90,
         "width": width,
         "height": height,

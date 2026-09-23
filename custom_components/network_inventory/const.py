@@ -5,7 +5,7 @@ NAME = "Network Inventory"
 STORAGE_KEY = f"{DOMAIN}.data"
 STORAGE_VERSION = 1
 PANEL_URL = "/network_inventory_static"
-VERSION = "0.21.0"
+VERSION = "0.22.0"
 UNIFI_STORAGE_KEY = f"{DOMAIN}.unifi"
 DEVICE_TYPES_VERSION = 2
 IP_PROTOCOLS = {"wifi", "ethernet"}
@@ -17,6 +17,8 @@ CUSTOM_FIELD_TYPES = {"text", "number", "date", "url", "boolean"}
 DEFAULT_GENERAL_SETTINGS = {
     "time_format": "24h",
     "date_format": "day_first",
+    "language": "auto",
+    "log_limit": 500,
 }
 
 DEFAULT_LABELS = [
