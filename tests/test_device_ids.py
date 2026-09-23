@@ -203,24 +203,43 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Imported Brand", self.manager.data["brands"])
 
     async def test_niimbot_printer_selection_is_stored(self):
-        result = await self.manager.async_save_niimbot("printer-device-id", 40, 15, 1.5, 2)
+        result = await self.manager.async_save_niimbot("printer-device-id", 40, 15, 1.5, 2, "custom", ["name", "id", "area"])
         self.assertEqual(result["device_id"], "printer-device-id")
         self.assertEqual(result["label_width_mm"], 40)
         self.assertEqual(result["top_margin_mm"], 2)
+        self.assertEqual(result["layout"], "custom")
+        self.assertEqual(result["print_fields"], ["name", "id", "area"])
         self.assertEqual(self.manager.data["niimbot"]["device_id"], "printer-device-id")
 
     async def test_general_date_and_time_preferences_are_stored(self):
         self.assertEqual(
             self.manager.data["general"],
-            {"time_format": "24h", "date_format": "day_first"},
+            {"time_format": "24h", "date_format": "day_first", "language": "auto", "log_limit": 500},
         )
         result = await self.manager.async_save_settings(
-            {"general": {"time_format": "12h", "date_format": "month_first"}}
+            {"general": {"time_format": "12h", "date_format": "month_first", "language": "de", "log_limit": 100}}
         )
         self.assertEqual(
             result["general"],
-            {"time_format": "12h", "date_format": "month_first"},
+            {"time_format": "12h", "date_format": "month_first", "language": "de", "log_limit": 100},
         )
+
+    async def test_log_limit_applies_to_existing_and_new_entries(self):
+        self.manager.data["logs"] = [{"id": str(i)} for i in range(130)]
+        await self.manager.async_save_settings({"general": {"time_format": "24h", "date_format": "day_first", "language": "fr", "log_limit": 100}})
+        self.assertEqual(len(self.manager.data["logs"]), 100)
+        self.assertEqual(self.manager.data["logs"][0]["id"], "31")
+        for i in range(3):
+            await self.manager.async_add(device_payload(f"Device {i}", "zigbee"))
+        self.assertEqual(len(self.manager.data["logs"]), 100)
+        self.assertEqual(self.manager.data["logs"][0]["id"], "34")
+
+    async def test_invalid_language_log_limit_and_print_fields_are_rejected(self):
+        for extra in ({"language": "xx"}, {"log_limit": 99}):
+            with self.assertRaises(storage.InventoryError):
+                await self.manager.async_save_settings({"general": {**self.manager.data["general"], **extra}})
+        with self.assertRaises(storage.InventoryError):
+            await self.manager.async_save_niimbot("printer", 30, 15, 1.5, 2, "custom", ["password"])
 
     async def test_invalid_general_preferences_are_rejected(self):
         with self.assertRaisesRegex(storage.InventoryError, "Time format"):
