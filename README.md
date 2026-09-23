@@ -21,6 +21,8 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - Import and export compatible CSV files
 - Portable JSON export and restore, plus automatic backups before bulk imports
 - Compact field-level change history with safe Undo for device edits, bulk edits, and battery replacement records
+- Log filters for device, action, and date range with expandable change details
+- Purchase date, store, serial number, warranty expiry, and linked receipt attachment per device
 - General settings for 24/12-hour time and day-first/month-first dates
 - Network, VLAN, SSID, connected AP/switch, and switch-port fields
 - Automatic UniFi topology enrichment for devices matched by MAC address
@@ -88,7 +90,8 @@ The importer recognises these spreadsheet columns:
 Device Code, MAC / IEEE Address, Device IP, Device Type, Brand,
 Area, Device Name, Device ID, HA Primary Entity, Admin URL, Comments, Protocol,
 Network, VLAN, SSID, AP / Switch, Switch Port, Labels,
-Battery Entity, Last Battery Change
+Battery Entity, Last Battery Change, Purchase Date, Store,
+Serial Number, Warranty End Date
 ```
 
 `Device Name`, `Device Type`, `Brand`, `Area`, `MAC / IEEE Address`, and `Protocol` are required. `Device IP` is also required for Wi-Fi and Ethernet devices. `Device Code` can be omitted to assign the next available permanent ID automatically. The importer also accepts `Wi-Fi`, `ZigBee`, `Bluetooth`, `Thread`, `Z-Wave`, `Ethernet`, `Matter`, and `Other` protocol values.
