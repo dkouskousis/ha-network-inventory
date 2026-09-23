@@ -1,3 +1,5 @@
+import { EXTRA_TEXT } from "./network-inventory-locales.js";
+
 const TEXT = {
   en: {
     title: "Network Inventory", overview: "Overview", devices: "Devices", newestDevices: "Newest Devices", discover: "Discover", homeAssistant: "Home Assistant",
@@ -90,7 +92,10 @@ const TEXT = {
     showChanges: "Show changes",
     notes: "Notes", addNote: "Add note", noteTitle: "Title (optional)", noteText: "Note", noteDevice: "Device (optional)",
     noNoteDevice: "No device", noNotes: "No notes yet.", noteSaved: "Note saved", noteDeleted: "Note deleted",
-    confirmDeleteNote: "Delete this note and its attachments?", noteAttachment: "Attach files", noteRequired: "Enter note text."
+    confirmDeleteNote: "Delete this note and its attachments?", noteAttachment: "Attach files", noteRequired: "Enter note text.",
+    appLanguage: "Language", appLanguageHelp: "Choose the app language", automaticLanguage: "Automatic (Home Assistant)", greekLanguage: "Ελληνικά", englishLanguage: "English", germanLanguage: "Deutsch", frenchLanguage: "Français",
+    loggingSettings: "Logs", logRetention: "Keep recent logs", logRetentionHelp: "Choose how many activity entries to retain.", logRetentionWarning: "Older entries are permanently removed when you save a lower limit.",
+    printingSettings: "Printing", printingHelp: "Configure NIIMBOT labels and choose what appears on them.", labelPreset: "Label preset", fullPreset: "Full: name, ID, protocol, MAC", compactPreset: "Compact: name and ID", customPreset: "Custom fields", printFields: "Fields to print"
   },
   el: {
     title: "Καταγραφή Συσκευών", overview: "Επισκόπηση", devices: "Συσκευές", newestDevices: "Νεότερες συσκευές", discover: "Discover", homeAssistant: "Home Assistant",
@@ -183,8 +188,12 @@ const TEXT = {
     showChanges: "Προβολή αλλαγών",
     notes: "Σημειώσεις", addNote: "Νέα σημείωση", noteTitle: "Τίτλος (προαιρετικά)", noteText: "Σημείωση", noteDevice: "Συσκευή (προαιρετικά)",
     noNoteDevice: "Χωρίς συσκευή", noNotes: "Δεν υπάρχουν σημειώσεις ακόμη.", noteSaved: "Η σημείωση αποθηκεύτηκε", noteDeleted: "Η σημείωση διαγράφηκε",
-    confirmDeleteNote: "Να διαγραφεί η σημείωση και τα συνημμένα της;", noteAttachment: "Επισύναψη αρχείων", noteRequired: "Γράψε το κείμενο της σημείωσης."
-  }
+    confirmDeleteNote: "Να διαγραφεί η σημείωση και τα συνημμένα της;", noteAttachment: "Επισύναψη αρχείων", noteRequired: "Γράψε το κείμενο της σημείωσης.",
+    appLanguage: "Γλώσσα", appLanguageHelp: "Επίλεξε τη γλώσσα της εφαρμογής", automaticLanguage: "Αυτόματα (Home Assistant)", greekLanguage: "Ελληνικά", englishLanguage: "English", germanLanguage: "Deutsch", frenchLanguage: "Français",
+    loggingSettings: "Logs", logRetention: "Διατήρηση πρόσφατων logs", logRetentionHelp: "Επίλεξε πόσες εγγραφές δραστηριότητας θα διατηρούνται.", logRetentionWarning: "Οι παλαιότερες εγγραφές διαγράφονται οριστικά αν αποθηκεύσεις μικρότερο όριο.",
+    printingSettings: "Εκτύπωση", printingHelp: "Ρύθμισε τα labels NIIMBOT και επίλεξε τι θα εμφανίζεται.", labelPreset: "Πρότυπο label", fullPreset: "Πλήρες: όνομα, ID, πρωτόκολλο, MAC", compactPreset: "Συμπαγές: όνομα και ID", customPreset: "Προσαρμοσμένα πεδία", printFields: "Πεδία προς εκτύπωση"
+  },
+  ...EXTRA_TEXT
 };
 
 const COLUMN_WIDTHS_KEY = "network-inventory-column-widths";
@@ -259,7 +268,7 @@ class NetworkInventoryPanel extends HTMLElement {
 
   set hass(value) {
     this._hass = value;
-    this.lang = value?.language?.startsWith("el") ? "el" : "en";
+    this.lang = this.resolveLanguage();
     if (this.data) {
       let batteryChanged = false;
       const updateLevel = item => {
@@ -302,6 +311,13 @@ class NetworkInventoryPanel extends HTMLElement {
   handleGlobalKeydown = event => {
     if (event.key === "Escape" && this.activeDeviceId && !this.shadowRoot.querySelector(".modal-backdrop")) this.closeDeviceDrawer();
   };
+
+  resolveLanguage() {
+    const configured = this.data?.general?.language || "auto";
+    if (configured !== "auto") return configured;
+    const language = this._hass?.language?.slice(0, 2)?.toLowerCase();
+    return ["en", "el", "de", "fr"].includes(language) ? language : "en";
+  }
 
   t(key) { return TEXT[this.lang || "en"][key] || TEXT.en[key] || key; }
 
@@ -461,6 +477,7 @@ class NetworkInventoryPanel extends HTMLElement {
   }
 
   render() {
+    this.lang = this.resolveLanguage();
     const availableUpdate = this.availableUpdate();
     const content = this.view === "overview" ? this.renderOverview()
       : this.view === "devices" ? this.renderDevices()
@@ -482,9 +499,9 @@ class NetworkInventoryPanel extends HTMLElement {
           ${this.nav("devices", "mdi:devices", "devices", this.data.devices.length)}
           ${this.nav("batteries", "mdi:battery-medium", "batteryPowered", this.batteryDevices().length)}
           ${this.nav("discover", "mdi:radar", "discover", this.data.ha_devices.length + (this.data.unifi_items?.filter(item => !item.inventory_id).length || 0))}
-          ${this.nav("integrations", "mdi:connection", "integrations")}
           ${this.nav("notes", "mdi:note-text-outline", "notes", this.data.notes?.length || null)}
           ${this.nav("logs", "mdi:history", "logs", this.data.logs?.length || null)}
+          ${this.nav("integrations", "mdi:connection", "integrations")}
           ${this.nav("settings", "mdi:cog-outline", "settings")}
         </nav>
         <main>${content}</main>
@@ -777,7 +794,6 @@ class NetworkInventoryPanel extends HTMLElement {
     const shelly = this.data.integrations?.shelly || {};
     const reolink = this.data.integrations?.reolink || {};
     const options = (state.available_sites || []).map(site => `<option value="${esc(`${site.host_id}|${site.site_id}`)}">${esc(site.name)} · ${esc(site.gateway_mac || site.site_id)}</option>`).join("");
-    const printerOptions = (niimbot.printers || []).map(printer => `<option value="${esc(printer.device_id)}" ${niimbot.device_id === printer.device_id ? "selected" : ""}>${esc(printer.name)}${printer.model ? ` · ${esc(printer.model)}` : ""}</option>`).join("");
     return `<section class="section-head"><div><h2>${this.t("integrations")}</h2><p>${this.t("integrationsHelp")}</p></div></section>
       <article class="card integration-card shelly-card">
         <div class="integration-logo shelly-logo"><img src="https://brands.home-assistant.io/_/shelly/icon.png" alt="Shelly"></div>
@@ -810,7 +826,7 @@ class NetworkInventoryPanel extends HTMLElement {
         <div class="integration-logo niimbot-logo"><img src="https://brands.home-assistant.io/_/niimbot/icon.png" alt="NIIMBOT"></div>
         <div class="grow"><div class="integration-title"><h2>${this.t("niimbot")}</h2><span class="status-dot ${niimbot.connected ? "ok" : ""}">${niimbot.connected ? this.t("printerReady") : this.t("notConnected")}</span></div>
           <p class="muted">${niimbot.installed ? this.t("niimbotHelp") : this.t("printerMissing")}</p>
-          ${niimbot.installed && printerOptions ? `<form id="niimbot-form" class="inline-form niimbot-form"><label>${this.t("selectPrinter")}<select name="device_id" required><option value=""></option>${printerOptions}</select></label><label>${this.t("labelWidth")}<input name="label_width_mm" type="number" min="20" max="200" step="0.5" value="${esc(niimbot.label_width_mm || 30)}" required></label><label>${this.t("labelHeight")}<input name="label_height_mm" type="number" min="8" max="15" step="0.5" value="${esc(niimbot.label_height_mm || 15)}" required></label><label>${this.t("labelMargin")}<input name="margin_mm" type="number" min="0.5" max="3" step="0.5" value="${esc(niimbot.margin_mm || 1.5)}" required></label><label>${this.t("labelTopMargin")}<input name="top_margin_mm" type="number" min="0.5" max="4" step="0.5" value="${esc(niimbot.top_margin_mm || 2)}" required></label><button class="primary" type="submit">${this.t("save")}</button></form>` : ""}
+          ${niimbot.installed ? `<a class="secondary compact" data-go-view="settings" data-settings-tab="printing" href="#">${this.t("printingSettings")}</a>` : ""}
         </div>
       </article>`;
   }
@@ -878,9 +894,11 @@ class NetworkInventoryPanel extends HTMLElement {
   }
 
   renderSettings() {
-    const tabs = `<div class="subnav-bar">${this.subnav("settings", "general", "general", "mdi:tune-variant")}${this.subnav("settings", "fields", "fieldOptions", "mdi:form-dropdown")}${this.subnav("settings", "ranges", "ranges", "mdi:numeric")}${this.subnav("settings", "backups", "backups", "mdi:backup-restore")}</div>`;
+    const tabs = `<div class="subnav-bar">${this.subnav("settings", "general", "general", "mdi:tune-variant")}${this.subnav("settings", "fields", "fieldOptions", "mdi:form-dropdown")}${this.subnav("settings", "ranges", "ranges", "mdi:numeric")}${this.subnav("settings", "printing", "printingSettings", "mdi:printer-outline")}${this.subnav("settings", "logging", "loggingSettings", "mdi:history")}${this.subnav("settings", "backups", "backups", "mdi:backup-restore")}</div>`;
     const content = this.settingsView === "general" ? this.renderGeneralSettings()
       : this.settingsView === "ranges" ? this.renderRangeSettings()
+      : this.settingsView === "printing" ? this.renderPrintingSettings()
+      : this.settingsView === "logging" ? this.renderLoggingSettings()
       : this.settingsView === "backups" ? this.renderBackupSettings()
       : this.renderFieldSettings();
     return tabs + content;
@@ -891,6 +909,7 @@ class NetworkInventoryPanel extends HTMLElement {
     const sample = new Date(2026, 8, 22, 17, 45);
     return `<form id="settings-form"><section class="section-head"><div><h2>${this.t("generalSettings")}</h2><p>${this.t("generalSettingsHelp")}</p></div></section>
       <section class="card settings-card general-settings">
+        <label><span><strong>${this.t("appLanguage")}</strong><small>${this.t("appLanguageHelp")}</small></span><select id="app-language">${[["auto","automaticLanguage"],["el","greekLanguage"],["en","englishLanguage"],["de","germanLanguage"],["fr","frenchLanguage"]].map(([value,label]) => `<option value="${value}" ${general.language === value ? "selected" : ""}>${this.t(label)}</option>`).join("")}</select></label>
         <label><span><strong>${this.t("timeFormat")}</strong><small>${general.time_format === "12h" ? "5:45 PM" : "17:45"}</small></span><select id="time-format"><option value="24h" ${general.time_format === "24h" ? "selected" : ""}>${this.t("twentyFourHour")} · 17:45</option><option value="12h" ${general.time_format === "12h" ? "selected" : ""}>${this.t("twelveHour")} · 5:45 PM</option></select></label>
         <label><span><strong>${this.t("dateFormat")}</strong><small>${general.date_format === "month_first" ? "09/22/2026" : "22/09/2026"}</small></span><select id="date-format"><option value="day_first" ${general.date_format === "day_first" ? "selected" : ""}>${this.t("dayFirst")} · DD/MM/YYYY</option><option value="month_first" ${general.date_format === "month_first" ? "selected" : ""}>${this.t("monthFirst")} · MM/DD/YYYY</option></select></label>
         <div class="format-preview"><ha-icon icon="mdi:calendar-clock-outline"></ha-icon><span><small>${this.t("formatPreview")}</small><strong id="format-preview-value">${esc(formatDateWithPreferences(sample, general, true))}</strong></span></div>
@@ -924,6 +943,17 @@ class NetworkInventoryPanel extends HTMLElement {
     </form>`;
   }
 
+  renderLoggingSettings() {
+    const limit = this.data.general.log_limit || 500;
+    return `<form id="settings-form"><section class="section-head"><div><h2>${this.t("loggingSettings")}</h2><p>${this.t("logRetentionHelp")}</p></div></section><section class="card settings-card general-settings"><label><span><strong>${this.t("logRetention")}</strong><small>${this.t("logRetentionWarning")}</small></span><select id="log-limit">${[100,250,500,1000,2000].map(value => `<option value="${value}" ${limit === value ? "selected" : ""}>${value} ${this.t("logResults")}</option>`).join("")}</select></label></section><div class="form-actions"><button type="submit" class="primary">${this.t("saveSettings")}</button></div></form>`;
+  }
+
+  renderPrintingSettings() {
+    const niimbot = this.data.integrations?.niimbot || {};
+    const printerOptions = (niimbot.printers || []).map(printer => `<option value="${esc(printer.device_id)}" ${niimbot.device_id === printer.device_id ? "selected" : ""}>${esc(printer.name)}${printer.model ? ` · ${esc(printer.model)}` : ""}</option>`).join("");
+    return `<section class="section-head"><div><h2>${this.t("printingSettings")}</h2><p>${this.t("printingHelp")}</p></div></section><section class="card settings-card"><h2>${this.t("niimbot")}</h2>${niimbot.installed && printerOptions ? `<form id="niimbot-form" class="printing-form"><label>${this.t("selectPrinter")}<select name="device_id" required><option value=""></option>${printerOptions}</select></label><label>${this.t("labelPreset")}<select name="layout"><option value="full" ${niimbot.layout === "full" ? "selected" : ""}>${this.t("fullPreset")}</option><option value="compact" ${niimbot.layout === "compact" ? "selected" : ""}>${this.t("compactPreset")}</option><option value="custom" ${niimbot.layout === "custom" ? "selected" : ""}>${this.t("customPreset")}</option></select></label><fieldset class="print-field-picker"><legend>${this.t("printFields")}</legend>${[["name","name"],["id","code"],["protocol","protocol"],["mac","address"],["area","area"]].map(([value,label]) => `<label><input name="print_fields" type="checkbox" value="${value}" ${(niimbot.print_fields || ["name","id","protocol","mac"]).includes(value) ? "checked" : ""}>${this.t(label)}</label>`).join("")}</fieldset><div class="print-dimensions"><label>${this.t("labelWidth")}<input name="label_width_mm" type="number" min="20" max="200" step="0.5" value="${esc(niimbot.label_width_mm ?? 30)}" required></label><label>${this.t("labelHeight")}<input name="label_height_mm" type="number" min="8" max="15" step="0.5" value="${esc(niimbot.label_height_mm ?? 15)}" required></label><label>${this.t("labelMargin")}<input name="margin_mm" type="number" min="0.5" max="3" step="0.5" value="${esc(niimbot.margin_mm ?? 1.5)}" required></label><label>${this.t("labelTopMargin")}<input name="top_margin_mm" type="number" min="0.5" max="4" step="0.5" value="${esc(niimbot.top_margin_mm ?? 2)}" required></label></div><div class="form-actions"><button class="primary" type="submit">${this.t("saveSettings")}</button></div></form>` : `<p class="muted">${this.t("printerMissing")}</p>`}</section>`;
+  }
+
   renderBackupSettings() {
     return `<section class="card settings-card backup-card"><div class="section-head"><div><h2>${this.t("fullBackup")}</h2><p>${this.t("fullBackupHelp")}</p></div><div class="backup-actions"><input id="backup-file" type="file" accept="application/json,application/zip,.json,.zip" hidden><button class="secondary" data-action="restore-backup-file"><ha-icon icon="mdi:backup-restore"></ha-icon>${this.t("restoreBackupFile")}</button><button class="primary" data-action="export-zip"><ha-icon icon="mdi:folder-zip-outline"></ha-icon>${this.t("exportZip")}</button><button class="secondary" data-action="export-json" title="${this.t("dataOnly")}"><ha-icon icon="mdi:code-json"></ha-icon>${this.t("exportJson")}</button></div></div>
       <div class="backup-list">${(this.data.backups || []).map(backup => `<div><span><strong>${esc(this.formatDate(backup.created_at))}</strong><small>${esc(backup.reason)} · ${esc(backup.device_count)} ${this.t("devices").toLowerCase()}</small></span><button class="secondary compact" data-restore-backup="${esc(backup.id)}">${this.t("restore")}</button></div>`).join("") || `<p class="muted">${this.t("automaticBackups")}: 0</p>`}</div>
@@ -950,8 +980,10 @@ class NetworkInventoryPanel extends HTMLElement {
       this[`${button.dataset.subnavGroup}View`] = button.dataset.subnavValue;
       this.render();
     }));
-    this.shadowRoot.querySelectorAll("[data-go-view]").forEach(button => button.addEventListener("click", () => {
+    this.shadowRoot.querySelectorAll("[data-go-view]").forEach(button => button.addEventListener("click", event => {
+      event.preventDefault();
       this.view = button.dataset.goView;
+      if (button.dataset.settingsTab) this.settingsView = button.dataset.settingsTab;
       this.render();
     }));
     this.shadowRoot.querySelectorAll("[data-action='add']").forEach(button => button.addEventListener("click", () => this.openDeviceModal()));
@@ -1069,6 +1101,8 @@ class NetworkInventoryPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll("[data-remove-custom-field]").forEach(button => button.addEventListener("click", () => button.closest(".custom-field-setting").remove()));
     this.shadowRoot.querySelectorAll("#time-format,#date-format").forEach(select => select.addEventListener("change", () => this.updateFormatPreview()));
     this.shadowRoot.querySelector("#settings-form")?.addEventListener("submit", event => this.saveSettings(event));
+    this.shadowRoot.querySelector("#niimbot-form [name='layout']")?.addEventListener("change", event => this.updatePrintFieldAvailability(event.target.value));
+    if (this.settingsView === "printing") this.updatePrintFieldAvailability(this.shadowRoot.querySelector("#niimbot-form [name='layout']")?.value);
     this.shadowRoot.querySelector("[data-action='export-json']")?.addEventListener("click", () => this.exportJson());
     this.shadowRoot.querySelector("[data-action='export-zip']")?.addEventListener("click", () => this.exportFullBackup());
     this.shadowRoot.querySelector("[data-action='restore-backup-file']")?.addEventListener("click", () => this.shadowRoot.querySelector("#backup-file").click());
@@ -1298,12 +1332,21 @@ class NetworkInventoryPanel extends HTMLElement {
     const label_height_mm = Number(new FormData(form).get("label_height_mm"));
     const margin_mm = Number(new FormData(form).get("margin_mm"));
     const top_margin_mm = Number(new FormData(form).get("top_margin_mm"));
+    const layout = String(new FormData(form).get("layout"));
+    const print_fields = [...form.querySelectorAll('[name="print_fields"]:checked')].map(input => input.value);
+    if (!print_fields.length && layout !== "custom") print_fields.push("name", "id");
     if (!device_id) return;
     this.setBusy(form, true);
     try {
-      await this._hass.callWS({ type: "network_inventory/niimbot/configure", device_id, label_width_mm, label_height_mm, margin_mm, top_margin_mm });
+      await this._hass.callWS({ type: "network_inventory/niimbot/configure", device_id, label_width_mm, label_height_mm, margin_mm, top_margin_mm, layout, print_fields });
       await this.reload(this.t("saved"));
     } catch (error) { this.toast(error?.message || this.t("error"), true); this.setBusy(form, false); }
+  }
+
+  updatePrintFieldAvailability(layout) {
+    const picker = this.shadowRoot.querySelector(".print-field-picker");
+    if (!picker) return;
+    picker.disabled = layout !== "custom";
   }
 
   async printLabel(deviceId, button) {
@@ -1670,7 +1713,9 @@ class NetworkInventoryPanel extends HTMLElement {
     })) : this.data.custom_fields;
     const general = {
       time_format: this.shadowRoot.querySelector("#time-format")?.value || this.data.general.time_format,
-      date_format: this.shadowRoot.querySelector("#date-format")?.value || this.data.general.date_format
+      date_format: this.shadowRoot.querySelector("#date-format")?.value || this.data.general.date_format,
+      language: this.shadowRoot.querySelector("#app-language")?.value || this.data.general.language,
+      log_limit: Number(this.shadowRoot.querySelector("#log-limit")?.value || this.data.general.log_limit)
     };
     try { await this._hass.callWS({ type: "network_inventory/settings", settings: { general, protocols, device_types, brands, labels, custom_fields } }); await this.reload(this.t("saved")); }
     catch (error) { this.toast(error?.message || this.t("error"), true); }
@@ -1942,6 +1987,7 @@ function csvToDevices(text) {
 }
 
 const BASE_CSS = `
+  .printing-form{display:grid;gap:17px;margin-top:14px}.printing-form>label,.print-dimensions label{display:grid;gap:7px;max-width:360px;font-size:12px;color:var(--secondary-text-color)}.printing-form select,.printing-form input[type=number]{width:100%;min-height:40px}.print-dimensions{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}.print-field-picker{border:1px solid var(--divider-color);border-radius:9px;padding:12px;display:flex;flex-wrap:wrap;gap:15px}.print-field-picker legend{font-size:12px;color:var(--secondary-text-color)}.print-field-picker label{display:flex;align-items:center;gap:6px}.print-field-picker input{width:auto}.print-field-picker:disabled{opacity:.55}
   .notes-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,350px),1fr));gap:14px}.note-card{padding:18px;min-width:0}.note-header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.note-header h3{margin:0 0 5px;font-size:16px}.note-header small{color:var(--secondary-text-color)}.note-header .card-actions{display:flex;gap:6px;flex-wrap:wrap}.note-body{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;margin:18px 0}.note-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.note-meta>span{display:inline-flex;align-items:center;gap:4px;color:var(--secondary-text-color);font-size:12px}.note-meta ha-icon,.note-files ha-icon{--mdc-icon-size:16px}.note-files{display:flex;gap:7px;flex-wrap:wrap;margin-top:14px;border-top:1px solid var(--divider-color);padding-top:13px}.note-files button{max-width:100%;overflow-wrap:anywhere}.note-label-picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(125px,1fr));gap:8px;margin-top:9px}.note-label-picker label{display:flex;gap:7px;align-items:center}.note-label-picker input{width:auto}.note-existing-files{display:grid;gap:8px}.note-existing-files span{display:flex;gap:5px;align-items:center}
   .integration-gap{margin-top:14px}.niimbot-logo{background:#f3e8ff!important;color:#7e22ce!important}.niimbot-form{max-width:none;flex-wrap:wrap}.niimbot-form label:first-child{min-width:230px}.niimbot-form label:not(:first-child){max-width:145px}
   :host{display:block;min-height:100%;background:var(--primary-background-color);color:var(--primary-text-color);font-family:var(--paper-font-body1_-_font-family,system-ui,sans-serif)}
