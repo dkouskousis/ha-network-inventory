@@ -15,16 +15,18 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - Duplicate IP detection and filtering, including the conflicting device names
 - Open matching devices in the UniFi portal and display the last UniFi refresh time
 - Optional NIIMBOT integration with per-device D11H label printing
-- Configurable D11H label dimensions and safe print margins
+- Configurable D11H label dimensions, safe print margins, and full, compact, or custom content presets under Settings → Printing
 - Review imported devices in a pre-filled form before saving
 - Configurable brand list with automatic additions during import
 - Import and export compatible CSV files
 - Portable JSON export and restore, plus automatic backups before bulk imports
 - Compact field-level change history with safe Undo for device edits, bulk edits, and battery replacement records
 - Log filters for device, action, and date range with expandable change details
+- Configurable log retention under Settings → Logs (100–2000 entries; default 500)
 - Purchase date, store, serial number, warranty expiry, and linked receipt attachment per device
 - Notes with optional title, linked inventory device, existing Home Assistant labels, attachments, and creation date
 - General settings for 24/12-hour time and day-first/month-first dates
+- Automatic Home Assistant language or manual English, Greek, German, and French app language
 - Network, VLAN, SSID, connected AP/switch, and switch-port fields
 - Automatic UniFi topology enrichment for devices matched by MAC address
 - Two-way Home Assistant Label synchronization with device-list chips and label filtering
@@ -47,7 +49,7 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - Home Assistant area suggestions with support for custom areas
 - Optional Device ID reassignment after a protocol change
 - Responsive desktop and mobile interface
-- English and Greek UI
+- English, Greek, German, and French UI
 - Data included in Home Assistant backups
 - Admin-only access through Home Assistant authentication
 
