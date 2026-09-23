@@ -117,7 +117,6 @@ class FirmwareTests(unittest.TestCase):
         self.assertEqual(status["active_firmware_entity_count"], 1)
         self.assertEqual(status["updates_available"], 1)
 
-
     def test_summarizes_native_reolink_integration(self):
         updates = {
             "device-1": {
@@ -134,6 +133,7 @@ class FirmwareTests(unittest.TestCase):
         self.assertEqual(status["firmware_entity_count"], 1)
         self.assertEqual(status["active_firmware_entity_count"], 1)
         self.assertEqual(status["updates_available"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
