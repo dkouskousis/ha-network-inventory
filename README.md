@@ -23,6 +23,7 @@ A small, local device inventory for Home Assistant. It adds a dedicated sidebar 
 - Compact field-level change history with safe Undo for device edits, bulk edits, and battery replacement records
 - Log filters for device, action, and date range with expandable change details
 - Purchase date, store, serial number, warranty expiry, and linked receipt attachment per device
+- Notes with optional title, linked inventory device, existing Home Assistant labels, attachments, and creation date
 - General settings for 24/12-hour time and day-first/month-first dates
 - Network, VLAN, SSID, connected AP/switch, and switch-port fields
 - Automatic UniFi topology enrichment for devices matched by MAC address
@@ -102,7 +103,7 @@ Separate multiple labels in CSV with semicolons. JSON exports use `labels` both 
 
 Inventory data is stored locally in Home Assistant's private `.storage` directory. The panel and its WebSocket commands require an administrator account. The UniFi API key is kept in a separate private Home Assistant Store and is never returned to the browser after submission.
 
-Device attachments are stored locally under `.storage/network_inventory/attachments`, are only available through authenticated administrator endpoints, and are included in normal Home Assistant backups. Network Inventory can also create a portable full ZIP backup containing `inventory.json` and every attachment. Full ZIP restore replaces both inventory data and the attachment collection. Individual attachments are limited to 10 MB and a full portable backup to 100 MB.
+Device and note attachments are stored locally under `.storage/network_inventory/attachments`, are only available through authenticated administrator endpoints, and are included in normal Home Assistant backups. Network Inventory can also create a portable full ZIP backup containing `inventory.json` and every attachment. Full ZIP restore replaces both inventory data and the attachment collection. Individual attachments are limited to 10 MB and a full portable backup to 100 MB.
 
 ## UniFi Cloud
 
