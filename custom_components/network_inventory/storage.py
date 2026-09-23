@@ -161,6 +161,10 @@ class InventoryStore:
             device.setdefault("battery_last_replaced_at", "")
             device.setdefault("battery_history", [])
             device.setdefault("primary_entity_id", "")
+            for key in ("purchase_date", "purchase_store", "serial_number", "warranty_end_date", "receipt_attachment_id"):
+                if key not in device:
+                    device[key] = ""
+                    migrated = True
             for key, default in (
                 ("admin_url", ""),
                 ("links", []),
@@ -600,6 +604,8 @@ class InventoryStore:
             if attachment is None:
                 raise InventoryError("Attachment not found")
             device["attachments"].remove(attachment)
+            if device.get("receipt_attachment_id") == attachment_id:
+                device["receipt_attachment_id"] = ""
             device["updated_at"] = _now()
             self._record_log(
                 "attachment_delete",
@@ -898,6 +904,11 @@ class InventoryStore:
             "connected_device",
             "switch_port",
             "admin_url",
+            "purchase_date",
+            "purchase_store",
+            "serial_number",
+            "warranty_end_date",
+            "receipt_attachment_id",
         )
         cleaned = {
             key: str(payload.get(key, "") or "").strip()[:1000] for key in allowed
@@ -951,6 +962,16 @@ class InventoryStore:
         cleaned["attachments"] = self._clean_attachments(
             payload.get("attachments", [])
         )
+        for key in ("purchase_date", "warranty_end_date"):
+            if cleaned[key]:
+                try:
+                    datetime.strptime(cleaned[key], "%Y-%m-%d")
+                except ValueError as err:
+                    raise InventoryError(f"{key.replace('_', ' ').capitalize()} must use YYYY-MM-DD") from err
+        if cleaned["receipt_attachment_id"] and not any(
+            item["id"] == cleaned["receipt_attachment_id"] for item in cleaned["attachments"]
+        ):
+            raise InventoryError("Receipt must be one of this device's attachments")
         if cleaned["admin_url"]:
             self._validate_http_url(cleaned["admin_url"], "Admin URL")
         if cleaned["battery_last_replaced_at"]:
