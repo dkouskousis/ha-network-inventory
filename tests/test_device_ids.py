@@ -93,6 +93,45 @@ class DeviceIdTests(unittest.IsolatedAsyncioTestCase):
         self.manager = storage.InventoryStore(None)
         await self.manager.async_load()
 
+    async def test_notes_with_optional_device_labels_and_attachment_backup(self):
+        device = await self.manager.async_add(device_payload("Router", "wifi"))
+        label = self.manager.data["labels"][0]
+        note = await self.manager.async_save_note({
+            "title": "Router setup", "body": "Login details are stored separately.",
+            "device_id": device["id"], "labels": [label],
+        })
+        self.assertEqual(note["device_id"], device["id"])
+        self.assertEqual(note["labels"], [label])
+        self.assertTrue(note["created_at"])
+        changed = await self.manager.async_save_note({"title": "Updated"}, note["id"])
+        self.assertEqual(changed["created_at"], note["created_at"])
+        self.assertEqual(changed["body"], note["body"])
+        with self.assertRaises(storage.InventoryError):
+            await self.manager.async_save_note({"body": "x", "labels": ["not-an-existing-label"]})
+        with self.assertRaises(storage.InventoryError):
+            await self.manager.async_save_note({"body": "x", "device_id": "unknown"})
+
+        unattached = await self.manager.async_save_note({"body": "General note"})
+        self.assertEqual(unattached["device_id"], "")
+        await self.manager.async_add_note_attachment(note["id"], {
+            "id": "file1", "name": "setup.txt", "stored_name": "file1.txt",
+            "size": 5, "content_type": "text/plain",
+        })
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp) / f"note-{note['id']}"
+            folder.mkdir()
+            (folder / "file1.txt").write_bytes(b"hello")
+            archive = files.build_full_backup(await self.manager.async_export(), Path(temp))
+            restored, attachments = files.parse_full_backup(archive)
+            self.assertEqual(attachments[f"note-{note['id']}/file1.txt"], b"hello")
+            await self.manager.async_restore(restored)
+            self.assertEqual(len(self.manager.data["notes"]), 2)
+
+        await self.manager.async_delete(device["id"])
+        self.assertEqual((await self.manager.async_get_note(note["id"]))["device_id"], "")
+        await self.manager.async_delete_note(unattached["id"])
+        self.assertEqual(len(self.manager.data["notes"]), 1)
+
     async def test_default_protocol_ranges(self):
         wifi = await self.manager.async_add(device_payload("Router", "Wi-Fi"))
         zigbee = await self.manager.async_add(device_payload("Motion", "ZigBee"))
